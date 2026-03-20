@@ -357,6 +357,7 @@ window.editEntry = async (dateStr) => {
     sel.disabled = true; // Lock date in edit mode
 
     if (data) {
+        // Existing entry — prefill with saved values
         document.getElementById('sleep-time').value = data.sleepTime !== 'NR' ? data.sleepTime : '';
         document.getElementById('wakeup-time').value = data.wakeupTime !== 'NR' ? data.wakeupTime : '';
         document.getElementById('chanting-time').value = data.chantingTime !== 'NR' ? data.chantingTime : '';
@@ -372,13 +373,27 @@ window.editEntry = async (dateStr) => {
             toggleMorningProgram(false);
             document.getElementById('morning-program-time').value = data.morningProgramTime !== 'NR' ? data.morningProgramTime : '';
         }
+    } else {
+        // NR entry — clear all fields for fresh fill
+        document.getElementById('sleep-time').value = '';
+        document.getElementById('wakeup-time').value = '';
+        document.getElementById('chanting-time').value = '';
+        document.getElementById('reading-mins').value = 0;
+        document.getElementById('hearing-mins').value = 0;
+        document.getElementById('notes-mins').value = 0;
+        document.getElementById('day-sleep-minutes').value = 0;
+        toggleMorningProgram(false);
+        document.getElementById('morning-program-time').value = '';
     }
 
     // Show edit banner
     editingDate = dateStr;
+    const isNREntry = !snap.exists;
     document.getElementById('edit-mode-banner').style.display = 'flex';
-    document.getElementById('edit-mode-banner').querySelector('span').textContent = `Editing: ${dateStr}`;
-    document.getElementById('sadhana-submit-btn').textContent = '💾 Update Entry';
+    document.getElementById('edit-mode-banner').querySelector('span').textContent = isNREntry
+        ? `Filling NR entry for: ${dateStr}`
+        : `Editing: ${dateStr}`;
+    document.getElementById('sadhana-submit-btn').textContent = isNREntry ? '✅ Submit Entry' : '💾 Update Entry';
 
     // Scroll to top
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -924,13 +939,89 @@ if (loginForm) {
     };
 }
 
-setTimeout(() => {
-    const logoutBtn = document.getElementById('logout-btn');
-    if (logoutBtn) logoutBtn.onclick = () => auth.signOut();
-}, 100);
+// --- EYE BUTTON: toggle password visibility ---
+window.togglePw = (inputId, btn) => {
+    const inp = document.getElementById(inputId);
+    if (inp.type === 'password') {
+        inp.type = 'text';
+        btn.textContent = '🙈';
+    } else {
+        inp.type = 'password';
+        btn.textContent = '👁';
+    }
+};
+
+// --- FORGOT PASSWORD ---
+window.openForgot = () => {
+    document.getElementById('forgot-email').value = '';
+    const msg = document.getElementById('forgot-msg');
+    msg.style.display = 'none';
+    document.getElementById('forgot-send-btn').disabled = false;
+    document.getElementById('forgot-send-btn').textContent = 'Send Reset Link';
+    document.getElementById('forgot-modal').classList.add('show');
+};
+
+window.closeForgot = () => {
+    document.getElementById('forgot-modal').classList.remove('show');
+};
+
+window.sendReset = async () => {
+    const email = document.getElementById('forgot-email').value.trim();
+    const msg = document.getElementById('forgot-msg');
+    const btn = document.getElementById('forgot-send-btn');
+
+    if (!email) {
+        msg.style.display = 'block';
+        msg.style.background = '#ffebee';
+        msg.style.color = '#e74c3c';
+        msg.textContent = 'Please enter your email.';
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Sending...';
+
+    try {
+        await auth.sendPasswordResetEmail(email);
+        msg.style.display = 'block';
+        msg.style.background = '#e8f5e9';
+        msg.style.color = '#27ae60';
+        msg.textContent = '✅ Reset link sent! Check your email (and spam folder).';
+        btn.textContent = 'Sent ✓';
+    } catch (err) {
+        msg.style.display = 'block';
+        msg.style.background = '#ffebee';
+        msg.style.color = '#e74c3c';
+        btn.disabled = false;
+        btn.textContent = 'Send Reset Link';
+        switch (err.code) {
+            case 'auth/user-not-found':
+                msg.textContent = 'No account found with this email.'; break;
+            case 'auth/invalid-email':
+                msg.textContent = 'Invalid email address.'; break;
+            case 'auth/too-many-requests':
+                msg.textContent = 'Too many attempts. Please wait a moment.'; break;
+            default:
+                msg.textContent = err.message;
+        }
+    }
+};
+
+// Close modal if clicking backdrop
+document.addEventListener('click', (e) => {
+    const modal = document.getElementById('forgot-modal');
+    if (modal && e.target === modal) closeForgot();
+});
+
+
 
 window.openProfileEdit = () => {
     document.getElementById('profile-name').value = userProfile.name;
     document.getElementById('cancel-edit').classList.remove('hidden');
     showSection('profile');
 };
+
+setTimeout(() => {
+    const logoutBtn = document.getElementById('logout-btn');
+    if (logoutBtn) logoutBtn.onclick = () => auth.signOut();
+}, 100);
