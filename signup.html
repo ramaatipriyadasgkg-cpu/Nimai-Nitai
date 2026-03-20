@@ -16,6 +16,10 @@
         button { background: var(--secondary); color: white; border: none; cursor: pointer; font-weight: 600; transition: 0.3s; }
         button:hover { opacity: 0.9; }
         button:disabled { background: #95a5a6; cursor: not-allowed; }
+        .pw-wrap { position: relative; margin: 8px 0; }
+        .pw-wrap input { margin: 0; padding-right: 44px; }
+        .pw-eye { position:absolute; right:12px; top:50%; transform:translateY(-50%); background:none; border:none; width:auto; margin:0; padding:4px; cursor:pointer; color:#999; font-size:18px; line-height:1; }
+        .pw-eye:hover { color: var(--secondary); opacity: 1; }
     </style>
 </head>
 <body>
@@ -25,7 +29,10 @@
             <form id="signup-form">
                 <input type="text" id="signup-name" placeholder="Full Name" required>
                 <input type="email" id="signup-email" placeholder="Email" required>
-                <input type="password" id="signup-password" placeholder="Password (min 6 characters)" minlength="6" required>
+                <div class="pw-wrap">
+                    <input type="password" id="signup-password" placeholder="Password (min 6 characters)" minlength="6" required>
+                    <button type="button" class="pw-eye" onclick="togglePw('signup-password', this)" title="Show/hide password">👁</button>
+                </div>
                 <button type="submit" id="signup-btn">Sign Up</button>
             </form>
             <div id="signup-msg" style="display:none; text-align:center; padding:12px; margin-top:10px; border-radius:8px; font-weight:600;"></div>
@@ -44,6 +51,12 @@
         };
         if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
         const auth = firebase.auth(), db = firebase.firestore();
+
+        function togglePw(inputId, btn) {
+            const inp = document.getElementById(inputId);
+            if (inp.type === 'password') { inp.type = 'text'; btn.textContent = '🙈'; }
+            else { inp.type = 'password'; btn.textContent = '👁'; }
+        }
 
         document.getElementById('signup-form').onsubmit = async (e) => {
             e.preventDefault();
