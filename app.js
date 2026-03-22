@@ -177,6 +177,9 @@ auth.onAuthStateChanged(async (user) => {
         if (!userDoc.exists || !userDoc.data().name) {
             showSection('profile');
             document.getElementById('profile-title').textContent = 'Set Your Name';
+            // First time setup — hide password change section
+            const pwSection = document.getElementById('change-password-section');
+            if (pwSection) pwSection.classList.add('hidden');
         } else {
             userProfile = userDoc.data();
             showSection('dashboard');
@@ -760,7 +763,23 @@ function generate4WeekComparison(weeksNewestFirst, weeksData) {
         return { sunStr, label, adjustedTotal, maxPossible, fairPercent, rawPercent, filledDays };
     });
 
-    // Now build table (oldest first = weekStats[0])
+    // Compute trend oldest→newest first, then reverse for display (newest on top)
+    let previousFairPercent = null;
+    const weekStatsWithTrend = weekStats.map((ws, idx) => {
+        let trendIcon = idx === 0 ? '—' : '', trendColor = '#666';
+        if (idx > 0 && previousFairPercent !== null) {
+            const diff = ws.fairPercent - previousFairPercent;
+            if (diff > 0)      { trendIcon = `▲ +${diff}%`; trendColor = '#27ae60'; }
+            else if (diff < 0) { trendIcon = `▼ ${diff}%`;  trendColor = '#e74c3c'; }
+            else               { trendIcon = '→ 0%';         trendColor = '#666'; }
+        }
+        previousFairPercent = ws.fairPercent;
+        return { ...ws, trendIcon, trendColor };
+    });
+
+    // Display newest week first
+    const displayStats = [...weekStatsWithTrend].reverse();
+
     let tableHTML = `
         <table class="comparison-table">
             <thead><tr>
@@ -772,26 +791,20 @@ function generate4WeekComparison(weeksNewestFirst, weeksData) {
             </tr></thead>
             <tbody>`;
 
-    let previousFairPercent = null;
-    weekStats.forEach((ws, idx) => {
-        let trendIcon = idx === 0 ? '—' : '', trendColor = '#666';
-        if (idx > 0 && previousFairPercent !== null) {
-            const diff = ws.fairPercent - previousFairPercent;
-            if (diff > 0) { trendIcon = `▲ +${diff}%`; trendColor = '#27ae60'; }
-            else if (diff < 0) { trendIcon = `▼ ${diff}%`; trendColor = '#e74c3c'; }
-            else { trendIcon = '→ 0%'; trendColor = '#666'; }
-        }
-        previousFairPercent = ws.fairPercent;
+    displayStats.forEach((ws, idx) => {
         const fairColor = ws.fairPercent >= 80 ? '#27ae60' : ws.fairPercent >= 60 ? '#f39c12' : '#e74c3c';
         const rawColor  = ws.rawPercent  >= 80 ? '#27ae60' : ws.rawPercent  >= 60 ? '#f39c12' : '#e74c3c';
+        // Highlight current week row
+        const isCurrentWeek = idx === 0;
+        const rowStyle = isCurrentWeek ? 'background:#f0f8ff;' : '';
 
         tableHTML += `
-            <tr>
-                <td><strong>${ws.label}</strong></td>
+            <tr style="${rowStyle}">
+                <td><strong>${ws.label}</strong>${isCurrentWeek ? ' <span style="font-size:10px;background:#3498db;color:white;padding:1px 5px;border-radius:10px;vertical-align:middle;">This week</span>' : ''}</td>
                 <td><strong>${ws.adjustedTotal}/${ws.maxPossible}</strong></td>
                 <td style="color:${fairColor};font-weight:bold;font-size:1.05em;">${ws.fairPercent}%</td>
                 <td style="color:${rawColor};font-weight:bold;font-size:1.05em;">${ws.rawPercent}%</td>
-                <td style="color:${trendColor};font-weight:bold;">${trendIcon}</td>
+                <td style="color:${ws.trendColor};font-weight:bold;">${ws.trendIcon}</td>
             </tr>`;
     });
 
@@ -803,12 +816,38 @@ function generate4WeekComparison(weeksNewestFirst, weeksData) {
     container.innerHTML = tableHTML;
 }
 
-// --- 9. CHARTS — CHANGE 4: Activity Analysis style ---
+// --- 9. CHARTS ---
 async function generateCharts() {
-    const period = document.getElementById('chart-period').value;
-    if (period === 'daily') await generateDailyCharts();
-    else if (period === 'weekly') await generateWeeklyCharts();
-    else if (period === 'monthly') await generateMonthlyCharts();
+    const period = document.getElementById('chart-period')?.value;
+    const scoreCanvas = document.getElementById('score-chart');
+    const actSection = document.getElementById('activity-chart-section');
+
+    // Show loading state
+    if (scoreCanvas) {
+        const ctx = scoreCanvas.getContext('2d');
+        if (scoreChart) { scoreChart.destroy(); scoreChart = null; }
+        ctx.clearRect(0, 0, scoreCanvas.width, scoreCanvas.height);
+        ctx.fillStyle = '#aaa';
+        ctx.font = '14px Segoe UI';
+        ctx.textAlign = 'center';
+        ctx.fillText('Loading…', scoreCanvas.width / 2 || 200, 60);
+    }
+
+    try {
+        if (period === 'daily')        await generateDailyCharts();
+        else if (period === 'weekly')  await generateWeeklyCharts();
+        else if (period === 'monthly') await generateMonthlyCharts();
+    } catch (err) {
+        console.error('Chart error:', err);
+        if (scoreCanvas) {
+            const ctx = scoreCanvas.getContext('2d');
+            ctx.clearRect(0, 0, scoreCanvas.width, scoreCanvas.height);
+            ctx.fillStyle = '#e74c3c';
+            ctx.font = '13px Segoe UI';
+            ctx.textAlign = 'center';
+            ctx.fillText('Error loading chart: ' + err.message, scoreCanvas.width / 2 || 200, 60);
+        }
+    }
 }
 
 // Global store for activity chart data (for filter updates)
@@ -823,38 +862,42 @@ async function generateDailyCharts() {
         dates.push(d.toISOString().split('T')[0]);
     }
 
-    // Firestore 'in' query max 30 docs — fetch in one batch (28 ≤ 30 ✓)
+    // Firestore v8 'in' limit is 10 — use date range query instead
     const snapshot = await db.collection('users').doc(currentUser.uid)
         .collection('sadhana')
-        .where(firebase.firestore.FieldPath.documentId(), 'in', dates)
+        .where(firebase.firestore.FieldPath.documentId(), '>=', dates[0])
+        .where(firebase.firestore.FieldPath.documentId(), '<=', dates[27])
         .get();
 
     const data = {};
     snapshot.forEach(doc => { data[doc.id] = doc.data(); });
 
-    const labels = dates.map(d => new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }));
-    const scores = dates.map(d => data[d]?.totalScore ?? null); // null = no entry
+    const labels = dates.map(d => new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }));
+    const scores = dates.map(d => (data[d] !== undefined ? (data[d].totalScore ?? null) : null));
 
     // Activity-wise total marks (sum across all 28 days)
     _currentActivityTotals = {
-        Sleep:          dates.reduce((s, d) => s + (data[d]?.scores?.sleep || 0), 0),
-        'Wake-up':      dates.reduce((s, d) => s + (data[d]?.scores?.wakeup || 0), 0),
-        'Morning Prog.':dates.reduce((s, d) => s + (data[d]?.scores?.morningProgram || 0), 0),
-        Chanting:       dates.reduce((s, d) => s + (data[d]?.scores?.chanting || 0), 0),
-        Reading:        dates.reduce((s, d) => s + (data[d]?.scores?.reading || 0), 0),
-        Hearing:        dates.reduce((s, d) => s + (data[d]?.scores?.hearing || 0), 0),
-        'Notes Rev.':   dates.reduce((s, d) => s + (data[d]?.scores?.notes || 0), 0),
-        'Day Sleep':    dates.reduce((s, d) => s + (data[d]?.scores?.daySleep || 0), 0),
+        Sleep:           dates.reduce((s, d) => s + (data[d]?.scores?.sleep || 0), 0),
+        'Wake-up':       dates.reduce((s, d) => s + (data[d]?.scores?.wakeup || 0), 0),
+        'Morning Prog.': dates.reduce((s, d) => s + (data[d]?.scores?.morningProgram || 0), 0),
+        Chanting:        dates.reduce((s, d) => s + (data[d]?.scores?.chanting || 0), 0),
+        Reading:         dates.reduce((s, d) => s + (data[d]?.scores?.reading || 0), 0),
+        Hearing:         dates.reduce((s, d) => s + (data[d]?.scores?.hearing || 0), 0),
+        'Notes Rev.':    dates.reduce((s, d) => s + (data[d]?.scores?.notes || 0), 0),
+        'Day Sleep':     dates.reduce((s, d) => s + (data[d]?.scores?.daySleep || 0), 0),
     };
 
-    // Ring: based on days with data only
+    // Ring: based on days with data only (fair)
     const submittedDays = dates.filter(d => data[d]).length;
     const maxPossible = submittedDays * 175;
     const totalEarned = scores.filter(s => s !== null).reduce((a, b) => a + b, 0);
-    const weekPercent = maxPossible > 0 ? Math.round((totalEarned / maxPossible) * 100) : 0;
+    const fairPercent = maxPossible > 0 ? Math.round((totalEarned / maxPossible) * 100) : 0;
 
-    renderScoreRing(weekPercent, `${dates[0].slice(5).replace('-','/')} – ${dates[27].slice(5).replace('-','/')}`, submittedDays, totalEarned);
-    renderScoreLineChart(labels, scores, 'line');
+    const ringContainer = document.getElementById('score-ring-container');
+    if (ringContainer) ringContainer.style.display = submittedDays > 0 ? 'block' : 'none';
+    if (submittedDays > 0) renderScoreRing(fairPercent, `${dates[0].slice(5).replace('-','/')} – ${dates[27].slice(5).replace('-','/')}`, submittedDays, totalEarned);
+
+    renderScoreLineChart(labels, scores);
     renderActivityBarChart(_currentActivityTotals);
 }
 
@@ -881,9 +924,11 @@ async function generateWeeklyCharts() {
             weekDates.push(d.toISOString().split('T')[0]);
         }
 
+        // Use range query — safe and no 'in' limit issue
         const snapshot = await db.collection('users').doc(currentUser.uid)
             .collection('sadhana')
-            .where(firebase.firestore.FieldPath.documentId(), 'in', weekDates)
+            .where(firebase.firestore.FieldPath.documentId(), '>=', weekDates[0])
+            .where(firebase.firestore.FieldPath.documentId(), '<=', weekDates[6])
             .get();
 
         let weekTotal = 0, weekDayCount = 0;
@@ -913,10 +958,13 @@ async function generateWeeklyCharts() {
 
     const maxPossible = latestWeekDays * 175;
     const weekPercent = maxPossible > 0 ? Math.round((latestWeekTotal / maxPossible) * 100) : 0;
-    const dateRange = `${weeks[weeks.length-1].getDate()}/${weeks[weeks.length-1].getMonth()+1} – week`;
+    const dateRange = `Wk ${weeks[weeks.length-1].getDate()}/${weeks[weeks.length-1].getMonth()+1}`;
 
-    renderScoreRing(weekPercent, dateRange, latestWeekDays, latestWeekTotal);
-    renderScoreLineChart(labels, scores, 'line');
+    const ringContainer = document.getElementById('score-ring-container');
+    if (ringContainer) ringContainer.style.display = latestWeekDays > 0 ? 'block' : 'none';
+    if (latestWeekDays > 0) renderScoreRing(weekPercent, dateRange, latestWeekDays, latestWeekTotal);
+
+    renderScoreLineChart(labels, scores);
     renderActivityBarChart(_currentActivityTotals);
 }
 
@@ -989,9 +1037,16 @@ function renderScoreRing(percent, dateRange, days, totalPts) {
     `;
 }
 
-// --- CHANGE 4: Render score LINE chart ---
-function renderScoreLineChart(labels, scores, type = 'line') {
+// --- Render score LINE chart ---
+function renderScoreLineChart(labels, scores) {
     if (scoreChart) { scoreChart.destroy(); scoreChart = null; }
+
+    // Restore ring visibility (monthly hides it)
+    const ringContainer = document.getElementById('score-ring-container');
+    if (ringContainer) ringContainer.style.display = '';
+
+    const actSection = document.getElementById('activity-chart-section');
+    if (actSection) actSection.style.display = 'block';
 
     const scoreCtx = document.getElementById('score-chart').getContext('2d');
     const pointColors = scores.map(s => {
@@ -1164,5 +1219,74 @@ setTimeout(() => {
 window.openProfileEdit = () => {
     document.getElementById('profile-name').value = userProfile.name;
     document.getElementById('cancel-edit').classList.remove('hidden');
+    // Show change password section in edit mode
+    const pwSection = document.getElementById('change-password-section');
+    if (pwSection) pwSection.classList.remove('hidden');
+    // Reset password fields
+    ['current-password','new-password','confirm-password'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
     showSection('profile');
 };
+
+// --- EYE BUTTON: toggle password visibility ---
+window.togglePw = (inputId, btn) => {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    if (input.type === 'password') {
+        input.type = 'text';
+        btn.textContent = '🙈';
+        btn.title = 'Hide password';
+    } else {
+        input.type = 'password';
+        btn.textContent = '👁️';
+        btn.title = 'Show password';
+    }
+};
+
+// --- CHANGE PASSWORD FORM ---
+const changePasswordForm = document.getElementById('change-password-form');
+if (changePasswordForm) {
+    changePasswordForm.onsubmit = async (e) => {
+        e.preventDefault();
+        const currentPw  = document.getElementById('current-password').value;
+        const newPw      = document.getElementById('new-password').value;
+        const confirmPw  = document.getElementById('confirm-password').value;
+
+        if (newPw !== confirmPw) {
+            alert('New passwords do not match. Please re-enter.'); return;
+        }
+        if (newPw.length < 6) {
+            alert('New password must be at least 6 characters.'); return;
+        }
+        if (newPw === currentPw) {
+            alert('New password must be different from your current password.'); return;
+        }
+
+        try {
+            // Re-authenticate first (required by Firebase before sensitive operations)
+            const credential = firebase.auth.EmailAuthProvider.credential(currentUser.email, currentPw);
+            await currentUser.reauthenticateWithCredential(credential);
+            await currentUser.updatePassword(newPw);
+            alert('✅ Password updated successfully!');
+            // Clear fields
+            ['current-password','new-password','confirm-password'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) { el.value = ''; el.type = 'password'; }
+            });
+            // Reset eye buttons
+            document.querySelectorAll('.pw-eye').forEach(btn => { btn.textContent = '👁️'; });
+        } catch (err) {
+            let msg = 'Failed to update password: ';
+            switch (err.code) {
+                case 'auth/wrong-password':
+                case 'auth/invalid-credential': msg += 'Current password is incorrect.'; break;
+                case 'auth/weak-password':      msg += 'New password is too weak.'; break;
+                case 'auth/requires-recent-login': msg += 'Please log out and log back in, then try again.'; break;
+                default: msg += err.message;
+            }
+            alert(msg);
+        }
+    };
+}
