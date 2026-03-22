@@ -42,6 +42,11 @@
         .mp-toggle { transition: all 0.2s; cursor:pointer; }
         .mp-toggle.mp-active[id="mp-done-btn"] { border-color:#27ae60!important; background:#27ae60!important; color:white!important; }
         .mp-toggle.mp-active[id="mp-no-btn"] { border-color:#e74c3c!important; background:#e74c3c!important; color:white!important; }
+        /* Password wrapper with eye toggle */
+        .pw-wrap { position: relative; margin: 8px 0; }
+        .pw-wrap input { margin: 0; padding-right: 44px; width: 100%; }
+        .pw-eye { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #888; font-size: 18px; width: auto; padding: 0; margin: 0; line-height: 1; }
+        .pw-eye:hover { color: #3498db; opacity: 1; }
     </style>
 </head>
 <body>
@@ -50,7 +55,10 @@
             <h2 style="text-align:center;">RAPD Sadhana Tracker</h2>
             <form id="login-form">
                 <input type="email" id="login-email" placeholder="Email" required>
-                <input type="password" id="login-password" placeholder="Password" required>
+                <div class="pw-wrap">
+                    <input type="password" id="login-password" placeholder="Password" required>
+                    <button type="button" class="pw-eye" onclick="togglePw('login-password', this)" title="Show/hide password">👁️</button>
+                </div>
                 <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-top: 8px;">
                     <input type="checkbox" id="remember-me" checked style="width: auto;">
                     <span style="font-weight: normal;">Remember me (Trust this device)</span>
@@ -63,10 +71,33 @@
         <section id="profile-section" class="card hidden">
             <h2 id="profile-title">Set Your Name</h2>
             <form id="profile-form">
+                <label><strong>Full Name:</strong></label>
                 <input type="text" id="profile-name" placeholder="Full Name" required>
-                <button type="submit">Save</button>
+                <button type="submit">💾 Save Name</button>
                 <button type="button" onclick="showSection('dashboard')" id="cancel-edit" class="hidden" style="background:#95a5a6">Cancel</button>
             </form>
+
+            <div id="change-password-section" class="hidden" style="margin-top:20px;padding-top:20px;border-top:1px solid #eee;">
+                <h3 style="margin-bottom:12px;color:var(--primary);font-size:1em;">🔒 Change Password</h3>
+                <form id="change-password-form">
+                    <label><strong>Current Password:</strong></label>
+                    <div class="pw-wrap">
+                        <input type="password" id="current-password" placeholder="Enter current password" required>
+                        <button type="button" class="pw-eye" onclick="togglePw('current-password', this)" title="Show/hide">👁️</button>
+                    </div>
+                    <label><strong>New Password:</strong></label>
+                    <div class="pw-wrap">
+                        <input type="password" id="new-password" placeholder="Enter new password (min 6 chars)" required minlength="6">
+                        <button type="button" class="pw-eye" onclick="togglePw('new-password', this)" title="Show/hide">👁️</button>
+                    </div>
+                    <label><strong>Confirm New Password:</strong></label>
+                    <div class="pw-wrap">
+                        <input type="password" id="confirm-password" placeholder="Confirm new password" required>
+                        <button type="button" class="pw-eye" onclick="togglePw('confirm-password', this)" title="Show/hide">👁️</button>
+                    </div>
+                    <button type="submit" style="background:var(--success);">🔒 Update Password</button>
+                </form>
+            </div>
         </section>
 
         <section id="dashboard-section" class="hidden">
