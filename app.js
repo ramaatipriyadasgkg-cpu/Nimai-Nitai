@@ -163,7 +163,12 @@ window.switchTab = (t) => {
     const btn = document.querySelector(`button[onclick*="switchTab('${t}')"]`);
     if (btn) btn.classList.add('active');
 
-    if (t === 'reports' && currentUser) loadReports(currentUser.uid, 'weekly-reports-container');
+    if (t === 'reports' && currentUser) {
+        loadReports(currentUser.uid, 'weekly-reports-container');
+        // Reload tapah report too if it's the active panel
+        const tapPanel = document.getElementById('tapah-reports-panel');
+        if (tapPanel && tapPanel.style.display !== 'none') loadTapahReport();
+    }
     if (t === 'charts' && currentUser) generateCharts();
     if (t === 'tapah') { resetTapahForm(); }
     // Reset edit mode when leaving Daily Entry
@@ -1424,6 +1429,387 @@ if (tapahForm) {
 }
 
 // ── END TAPAH MODULE ──
+
+// ══════════════════════════════════════════════
+// --- REPORT SWITCHER ---
+// ══════════════════════════════════════════════
+window.switchReport = (type) => {
+    const sadPanel   = document.getElementById('sadhana-reports-panel');
+    const tapPanel   = document.getElementById('tapah-reports-panel');
+    const sadBtn     = document.getElementById('report-sadhana-btn');
+    const tapBtn     = document.getElementById('report-tapah-btn');
+    if (!sadPanel || !tapPanel) return;
+
+    if (type === 'sadhana') {
+        sadPanel.style.display = 'block';
+        tapPanel.style.display = 'none';
+        if (sadBtn) { sadBtn.style.background = 'var(--secondary)'; sadBtn.style.color = 'white'; }
+        if (tapBtn) { tapBtn.style.background = '#eee'; tapBtn.style.color = '#666'; }
+    } else {
+        sadPanel.style.display = 'none';
+        tapPanel.style.display = 'block';
+        if (sadBtn) { sadBtn.style.background = '#eee'; sadBtn.style.color = '#666'; }
+        if (tapBtn) { tapBtn.style.background = '#764ba2'; tapBtn.style.color = 'white'; }
+        loadTapahReport();
+    }
+};
+
+// ══════════════════════════════════════════════
+// --- TAPAH REPORT ---
+// ══════════════════════════════════════════════
+
+// Which collapsed groups are currently expanded (set of keys like 'week_2026-03-01' or 'month_2026-03')
+const _tapahExpanded = new Set();
+
+window.toggleTapahGroup = (key) => {
+    if (_tapahExpanded.has(key)) _tapahExpanded.delete(key);
+    else _tapahExpanded.add(key);
+    renderTapahReport(window._tapahAllData || {});
+};
+
+async function loadTapahReport() {
+    const container = document.getElementById('tapah-report-container');
+    if (!container) return;
+    container.innerHTML = '<p style="color:#aaa;text-align:center;padding:30px;">Loading Tapah data…</p>';
+
+    const snap = await db.collection('users').doc(currentUser.uid).collection('tapah').get();
+    const allData = {};
+    snap.forEach(doc => { allData[doc.id] = doc.data(); });
+    window._tapahAllData = allData;
+    renderTapahReport(allData);
+}
+
+function renderTapahReport(allData) {
+    const container = document.getElementById('tapah-report-container');
+    if (!container) return;
+
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+
+    // Get current week Sunday
+    const thisWeekSun = new Date(today);
+    thisWeekSun.setDate(today.getDate() - today.getDay());
+    const thisWeekSunStr = thisWeekSun.toISOString().split('T')[0];
+
+    // All questions list
+    const allQuestions = [
+        ...ANUKUL_QUESTIONS.map(q => ({ ...q, section: 'anukul' })),
+        ...PRATIKUL_QUESTIONS.map(q => ({ ...q, section: 'pratikul' }))
+    ];
+
+    // --- Build timeline: group dates into weeks, weeks into months ---
+    // Find all dates that have data OR are in the current week
+    const allDates = new Set(Object.keys(allData));
+
+    // Always include current week dates up to today
+    for (let i = 0; i < 7; i++) {
+        const d = new Date(thisWeekSun);
+        d.setDate(thisWeekSun.getDate() + i);
+        const ds = d.toISOString().split('T')[0];
+        if (ds <= todayStr) allDates.add(ds);
+    }
+
+    if (allDates.size === 0) {
+        container.innerHTML = '<p style="color:#aaa;text-align:center;padding:30px;">No Tapah data yet. Start tracking!</p>';
+        return;
+    }
+
+    // Group dates by week (Sun–Sat)
+    const weekMap = {};
+    [...allDates].sort().forEach(dateStr => {
+        const d = new Date(dateStr + 'T00:00:00');
+        const sun = new Date(d); sun.setDate(d.getDate() - d.getDay());
+        const sunStr = sun.toISOString().split('T')[0];
+        if (!weekMap[sunStr]) weekMap[sunStr] = [];
+        weekMap[sunStr].push(dateStr);
+    });
+
+    // Group weeks by month
+    const monthMap = {};
+    Object.keys(weekMap).sort().forEach(sunStr => {
+        // Use the month of the majority of days in the week
+        const firstDay = weekMap[sunStr][0];
+        const monthKey = firstDay.slice(0, 7); // YYYY-MM
+        if (!monthMap[monthKey]) monthMap[monthKey] = [];
+        monthMap[monthKey].push(sunStr);
+    });
+
+    const sortedMonths = Object.keys(monthMap).sort();
+
+    // Helper: cell color based on answer
+    const cellColor = (val, section) => {
+        if (!val || val === 'nr') return '#f8f9fa';
+        if (val === 'yes')     return section === 'anukul' ? '#c8f7c5' : '#ffd5d5';
+        if (val === 'partial') return '#fff3cd';
+        if (val === 'no')      return section === 'anukul' ? '#ffd5d5' : '#c8f7c5';
+        return '#f8f9fa';
+    };
+    const cellTextColor = (val, section) => {
+        if (!val || val === 'nr') return '#aaa';
+        if (val === 'yes')     return section === 'anukul' ? '#27ae60' : '#e74c3c';
+        if (val === 'partial') return '#f39c12';
+        if (val === 'no')      return section === 'anukul' ? '#e74c3c' : '#27ae60';
+        return '#aaa';
+    };
+    const cellLabel = (val) => {
+        if (!val || val === 'nr') return '–';
+        if (val === 'yes') return 'Y';
+        if (val === 'partial') return 'P';
+        if (val === 'no') return 'N';
+        return '–';
+    };
+    const scoreLabel = (val, section) => {
+        if (!val || val === 'nr') return '–';
+        const s = section === 'anukul' ? getAanukulScore(val) : getPratikulScore(val);
+        return (s >= 0 ? '+' : '') + s;
+    };
+
+    // Format date label: "01 Mar"
+    const fmtDate = (ds) => {
+        const d = new Date(ds + 'T00:00:00');
+        return `${String(d.getDate()).padStart(2,'0')} ${d.toLocaleString('en-GB',{month:'short'})}`;
+    };
+    const fmtMonth = (ym) => {
+        const [y, m] = ym.split('-');
+        return new Date(y, m-1, 1).toLocaleString('en-GB', { month: 'long', year: 'numeric' });
+    };
+    const fmtWeek = (sunStr) => {
+        const sun = new Date(sunStr + 'T00:00:00');
+        const sat = new Date(sun); sat.setDate(sun.getDate() + 6);
+        return `${fmtDate(sunStr)} – ${fmtDate(sat.toISOString().split('T')[0])}`;
+    };
+
+    // Score summary for a list of dates
+    const summarize = (dates) => {
+        const totals = {}; // qid → total score
+        let grandTotal = 0, maxPossible = 0;
+        allQuestions.forEach(q => { totals[q.id] = 0; });
+        dates.forEach(ds => {
+            const entry = allData[ds];
+            if (!entry) return;
+            maxPossible += 50;
+            grandTotal += entry.totalScore || 0;
+            allQuestions.forEach(q => {
+                const ans = entry[q.section]?.[q.id];
+                const sc = q.section === 'anukul' ? getAanukulScore(ans || 'no') : getPratikulScore(ans || 'no');
+                totals[q.id] += sc;
+            });
+        });
+        return { totals, grandTotal, maxPossible };
+    };
+
+    // ---- BUILD HTML ----
+    // Fixed left columns: Sr, Particular, T-Dur
+    // Then dynamic columns based on expanded/collapsed state
+
+    // Build column definitions
+    // Each column is either: { type:'day', date } | { type:'week', sunStr, dates } | { type:'month', monthKey, dates }
+    const columns = [];
+    const isCurrentWeek = (sunStr) => sunStr === thisWeekSunStr;
+
+    sortedMonths.forEach(monthKey => {
+        const weeksInMonth = monthMap[monthKey];
+        const monthDates = weeksInMonth.flatMap(w => weekMap[w]).filter(d => allData[d] || d <= todayStr);
+        const monthExpanded = _tapahExpanded.has('month_' + monthKey);
+
+        if (monthExpanded) {
+            // Show each week inside this month
+            weeksInMonth.forEach(sunStr => {
+                const weekDates = weekMap[sunStr].filter(d => d <= todayStr);
+                const weekExpanded = _tapahExpanded.has('week_' + sunStr) || isCurrentWeek(sunStr);
+
+                if (weekExpanded) {
+                    // Show individual days
+                    weekDates.forEach(ds => {
+                        columns.push({ type: 'day', date: ds, parentWeek: sunStr, parentMonth: monthKey });
+                    });
+                    // Week total column (collapsible back)
+                    columns.push({ type: 'weekTotal', sunStr, dates: weekDates, parentMonth: monthKey });
+                } else {
+                    // Show collapsed week column
+                    columns.push({ type: 'week', sunStr, dates: weekDates, parentMonth: monthKey });
+                }
+            });
+            // Month total column (collapsible back)
+            columns.push({ type: 'monthTotal', monthKey, dates: monthDates });
+        } else {
+            // Show collapsed month column
+            columns.push({ type: 'month', monthKey, dates: monthDates });
+        }
+    });
+
+    // Auto-expand current week always
+    const currentWeekDates = (weekMap[thisWeekSunStr] || []).filter(d => d <= todayStr);
+
+    // Build header row
+    let headerCells = '';
+    columns.forEach(col => {
+        if (col.type === 'day') {
+            const isToday = col.date === todayStr;
+            headerCells += `<th style="min-width:44px;padding:6px 3px;font-size:11px;background:#3498db;color:white;text-align:center;white-space:nowrap;${isToday?'background:#1a5276;':''}">${fmtDate(col.date)}</th>`;
+        } else if (col.type === 'week') {
+            headerCells += `<th onclick="toggleTapahGroup('week_${col.sunStr}')" style="min-width:80px;padding:6px 4px;font-size:11px;background:#2980b9;color:white;text-align:center;cursor:pointer;white-space:nowrap;" title="Click to expand">${fmtWeek(col.sunStr)} ▶</th>`;
+        } else if (col.type === 'weekTotal') {
+            headerCells += `<th onclick="toggleTapahGroup('week_${col.sunStr}')" style="min-width:60px;padding:6px 4px;font-size:11px;background:#1a6b9a;color:white;text-align:center;cursor:pointer;white-space:nowrap;" title="Click to collapse">Wk Total ◀</th>`;
+        } else if (col.type === 'month') {
+            headerCells += `<th onclick="toggleTapahGroup('month_${col.monthKey}')" style="min-width:90px;padding:6px 4px;font-size:11px;background:#8e44ad;color:white;text-align:center;cursor:pointer;white-space:nowrap;" title="Click to expand">${fmtMonth(col.monthKey)} ▶</th>`;
+        } else if (col.type === 'monthTotal') {
+            headerCells += `<th onclick="toggleTapahGroup('month_${col.monthKey}')" style="min-width:70px;padding:6px 4px;font-size:11px;background:#6c3483;color:white;text-align:center;cursor:pointer;white-space:nowrap;" title="Click to collapse">Mo Total ◀</th>`;
+        }
+    });
+
+    // Build section rows
+    let bodyRows = '';
+
+    // Section header: ANUKULASYA
+    bodyRows += `<tr><td colspan="3" style="background:#e8f8f0;font-weight:700;color:#27ae60;padding:8px 10px;font-size:12px;letter-spacing:0.5px;">🌿 ANUKULASYA (Favourable)</td>${columns.map(col => `<td style="background:#e8f8f0;"></td>`).join('')}</tr>`;
+
+    ANUKUL_QUESTIONS.forEach((q, idx) => {
+        let cells = '';
+        columns.forEach(col => {
+            if (col.type === 'day') {
+                const entry = allData[col.date];
+                const val = entry?.anukul?.[q.id] || null;
+                const isFuture = col.date > todayStr;
+                if (isFuture) {
+                    cells += `<td style="background:#f8f9fa;text-align:center;font-size:11px;color:#ccc;">–</td>`;
+                } else {
+                    cells += `<td style="background:${cellColor(val,'anukul')};text-align:center;font-size:12px;font-weight:600;color:${cellTextColor(val,'anukul')};padding:5px 2px;" title="${val||'No entry'}">${cellLabel(val)}</td>`;
+                }
+            } else {
+                // Summary column
+                const { totals, maxPossible } = summarize(col.dates.filter(d => allData[d]));
+                const sc = totals[q.id] || 0;
+                const maxSc = col.dates.filter(d => allData[d]).length * 5;
+                const pct = maxSc > 0 ? Math.round(sc / maxSc * 100) : 0;
+                const bg = pct >= 70 ? '#c8f7c5' : pct >= 40 ? '#fff3cd' : maxSc > 0 ? '#ffd5d5' : '#f8f9fa';
+                const tc = pct >= 70 ? '#27ae60' : pct >= 40 ? '#f39c12' : maxSc > 0 ? '#e74c3c' : '#aaa';
+                cells += `<td style="background:${bg};text-align:center;font-size:12px;font-weight:700;color:${tc};padding:5px 2px;">${maxSc > 0 ? sc : '–'}</td>`;
+            }
+        });
+        bodyRows += `<tr>
+            <td style="padding:6px 8px;font-size:12px;text-align:center;color:#555;">${idx+1}</td>
+            <td style="padding:6px 8px;font-size:12px;color:#2c3e50;">${q.label}</td>
+            <td style="padding:6px 8px;font-size:11px;color:#888;text-align:center;white-space:nowrap;">${q.target||''}</td>
+            ${cells}
+        </tr>`;
+    });
+
+    // Section header: PRATIKULASYA
+    bodyRows += `<tr><td colspan="3" style="background:#fde8e8;font-weight:700;color:#e74c3c;padding:8px 10px;font-size:12px;letter-spacing:0.5px;">🚫 PRATIKULASYA (Unfavourable)</td>${columns.map(col => `<td style="background:#fde8e8;"></td>`).join('')}</tr>`;
+
+    PRATIKUL_QUESTIONS.forEach((q, idx) => {
+        let cells = '';
+        columns.forEach(col => {
+            if (col.type === 'day') {
+                const entry = allData[col.date];
+                const val = entry?.pratikul?.[q.id] || null;
+                const isFuture = col.date > todayStr;
+                if (isFuture) {
+                    cells += `<td style="background:#f8f9fa;text-align:center;font-size:11px;color:#ccc;">–</td>`;
+                } else {
+                    cells += `<td style="background:${cellColor(val,'pratikul')};text-align:center;font-size:12px;font-weight:600;color:${cellTextColor(val,'pratikul')};padding:5px 2px;" title="${val||'No entry'}">${cellLabel(val)}</td>`;
+                }
+            } else {
+                const { totals } = summarize(col.dates.filter(d => allData[d]));
+                const sc = totals[q.id] || 0;
+                const maxSc = col.dates.filter(d => allData[d]).length * 5;
+                const pct = maxSc > 0 ? Math.round(sc / maxSc * 100) : 0;
+                const bg = pct >= 70 ? '#c8f7c5' : pct >= 40 ? '#fff3cd' : maxSc > 0 ? '#ffd5d5' : '#f8f9fa';
+                const tc = pct >= 70 ? '#27ae60' : pct >= 40 ? '#f39c12' : maxSc > 0 ? '#e74c3c' : '#aaa';
+                cells += `<td style="background:${bg};text-align:center;font-size:12px;font-weight:700;color:${tc};padding:5px 2px;">${maxSc > 0 ? sc : '–'}</td>`;
+            }
+        });
+        bodyRows += `<tr>
+            <td style="padding:6px 8px;font-size:12px;text-align:center;color:#555;">${idx+1}</td>
+            <td style="padding:6px 8px;font-size:12px;color:#2c3e50;">${q.label}</td>
+            <td style="padding:6px 8px;font-size:11px;color:#888;text-align:center;"></td>
+            ${cells}
+        </tr>`;
+    });
+
+    // Total row
+    let totalCells = '';
+    columns.forEach(col => {
+        const datesWithData = col.dates ? col.dates.filter(d => allData[d]) : (allData[col.date] ? [col.date] : []);
+        if (col.type === 'day') {
+            const entry = allData[col.date];
+            const sc = entry?.totalScore ?? null;
+            const isFuture = col.date > todayStr;
+            if (isFuture) {
+                totalCells += `<td style="background:#f8f9fa;text-align:center;font-size:11px;color:#ccc;font-weight:700;">–</td>`;
+            } else {
+                const bg = sc === null ? '#f8f9fa' : sc >= 35 ? '#c8f7c5' : sc >= 20 ? '#fff3cd' : '#ffd5d5';
+                const tc = sc === null ? '#aaa' : sc >= 35 ? '#27ae60' : sc >= 20 ? '#f39c12' : '#e74c3c';
+                totalCells += `<td style="background:${bg};text-align:center;font-size:12px;font-weight:700;color:${tc};padding:5px 2px;">${sc !== null ? sc : '–'}</td>`;
+            }
+        } else {
+            const { grandTotal, maxPossible } = summarize(datesWithData);
+            const pct = maxPossible > 0 ? Math.round(grandTotal / maxPossible * 100) : 0;
+            const bg = pct >= 70 ? '#c8f7c5' : pct >= 40 ? '#fff3cd' : maxPossible > 0 ? '#ffd5d5' : '#f8f9fa';
+            const tc = pct >= 70 ? '#27ae60' : pct >= 40 ? '#f39c12' : maxPossible > 0 ? '#e74c3c' : '#aaa';
+            totalCells += `<td style="background:${bg};text-align:center;font-size:12px;font-weight:700;color:${tc};padding:5px 2px;">${maxPossible > 0 ? grandTotal : '–'}</td>`;
+        }
+    });
+
+    // % row
+    let pctCells = '';
+    columns.forEach(col => {
+        const datesWithData = col.dates ? col.dates.filter(d => allData[d]) : (allData[col.date] ? [col.date] : []);
+        if (col.type === 'day') {
+            const entry = allData[col.date];
+            const pct = entry ? Math.round((entry.totalScore || 0) / 50 * 100) : null;
+            const isFuture = col.date > todayStr;
+            if (isFuture) {
+                pctCells += `<td style="text-align:center;font-size:11px;color:#ccc;">–</td>`;
+            } else {
+                const tc = pct === null ? '#aaa' : pct >= 70 ? '#27ae60' : pct >= 40 ? '#f39c12' : '#e74c3c';
+                pctCells += `<td style="text-align:center;font-size:11px;font-weight:700;color:${tc};">${pct !== null ? pct+'%' : '–'}</td>`;
+            }
+        } else {
+            const { grandTotal, maxPossible } = summarize(datesWithData);
+            const pct = maxPossible > 0 ? Math.round(grandTotal / maxPossible * 100) : null;
+            const tc = pct === null ? '#aaa' : pct >= 70 ? '#27ae60' : pct >= 40 ? '#f39c12' : '#e74c3c';
+            pctCells += `<td style="text-align:center;font-size:11px;font-weight:700;color:${tc};">${pct !== null ? pct+'%' : '–'}</td>`;
+        }
+    });
+
+    // Legend
+    const legend = `
+        <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px;font-size:12px;align-items:center;">
+            <span style="font-weight:600;color:#555;">Legend:</span>
+            <span style="background:#c8f7c5;color:#27ae60;padding:2px 10px;border-radius:4px;font-weight:600;">Y = Yes</span>
+            <span style="background:#fff3cd;color:#f39c12;padding:2px 10px;border-radius:4px;font-weight:600;">P = Partial</span>
+            <span style="background:#ffd5d5;color:#e74c3c;padding:2px 10px;border-radius:4px;font-weight:600;">N = No</span>
+            <span style="color:#888;font-size:11px;">| Click week/month headers to expand ▶ or collapse ◀</span>
+        </div>`;
+
+    container.innerHTML = `
+        ${legend}
+        <div style="overflow-x:auto;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,0.08);">
+        <table style="border-collapse:collapse;width:100%;font-family:'Segoe UI',sans-serif;min-width:400px;">
+            <thead>
+                <tr style="background:#2c3e50;color:white;">
+                    <th style="padding:8px 6px;font-size:12px;text-align:center;min-width:32px;">Sr</th>
+                    <th style="padding:8px 10px;font-size:12px;text-align:left;min-width:180px;">Particular</th>
+                    <th style="padding:8px 6px;font-size:11px;text-align:center;min-width:48px;">T-Dur</th>
+                    ${headerCells}
+                </tr>
+            </thead>
+            <tbody>
+                ${bodyRows}
+                <tr style="background:#f0f4ff;">
+                    <td colspan="3" style="padding:7px 10px;font-weight:700;font-size:12px;color:#2c3e50;">Total (50)</td>
+                    ${totalCells}
+                </tr>
+                <tr style="background:#e8f0fe;">
+                    <td colspan="3" style="padding:7px 10px;font-weight:700;font-size:12px;color:#2c3e50;">Percentage</td>
+                    ${pctCells}
+                </tr>
+            </tbody>
+        </table>
+        </div>`;
+}
 function setupDateSelect() {
     const s = document.getElementById('sadhana-date');
     if (!s) return;
