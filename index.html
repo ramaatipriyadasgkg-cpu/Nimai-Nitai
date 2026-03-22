@@ -97,17 +97,17 @@
 
                 <div class="card">
                     <form id="sadhana-form">
-                        <label>Date:</label>
+                        <label><strong>Date:</strong></label>
                         <select id="sadhana-date" required></select>
 
-                        <label>Bed Time (Yesterday):</label>
+                        <label><strong>Bed Time (Yesterday):</strong></label>
                         <input type="time" id="sleep-time" required>
 
-                        <label>Wake Up Time:</label>
+                        <label><strong>Wake Up Time:</strong></label>
                         <input type="time" id="wakeup-time" required>
 
                         <!-- CHANGE 3: Morning Program with Yes/No toggle -->
-                        <label>Morning Program:</label>
+                        <label><strong>Morning Program:</strong></label>
                         <div style="display:flex;gap:8px;margin:6px 0 4px;">
                             <button type="button" id="mp-done-btn" onclick="toggleMorningProgram(false)"
                                 class="mp-toggle mp-active"
@@ -125,21 +125,21 @@
                             <small style="display:block;color:#666;margin-top:-4px;margin-bottom:8px;">Target: 4:45 AM for 25 marks</small>
                         </div>
 
-                        <label>Chanting (Last round by):</label>
+                        <label><strong>Chanting (Last round by):</strong></label>
                         <input type="time" id="chanting-time" required>
                         <small style="display:block;color:#666;margin-top:-5px;margin-bottom:8px;">Target: Before 9:00 AM for 25 marks</small>
 
-                        <label>Reading (Pathan) - Minutes:</label>
+                        <label><strong>Reading (Pathan) - Minutes:</strong></label>
                         <input type="number" id="reading-mins" placeholder="Enter minutes" required min="0" value="0">
 
-                        <label>Hearing (Shravan) - Minutes:</label>
+                        <label><strong>Hearing (Shravan) - Minutes:</strong></label>
                         <input type="number" id="hearing-mins" placeholder="Enter minutes" required min="0" value="0">
 
-                        <label>Notes Revision - Minutes:</label>
+                        <label><strong>Notes Revision - Minutes:</strong></label>
                         <input type="number" id="notes-mins" placeholder="Enter minutes" required min="0" value="0">
                         <small style="display:block;color:#666;margin-top:-5px;margin-bottom:8px;">Target: 35 mins for 25 marks | Weekly: 245 mins for full marks</small>
 
-                        <label>Day Sleep (Mins):</label>
+                        <label><strong>Day Sleep (Mins):</strong></label>
                         <input type="number" id="day-sleep-minutes" value="0" required>
 
                         <button type="submit" id="sadhana-submit-btn" style="background:var(--success);margin-top:15px;">✅ Submit Sadhana</button>
@@ -163,9 +163,9 @@
 
             <div id="charts-tab" class="tab-content hidden">
                 <div class="card">
-                    <label>View Period:</label>
+                    <label><strong>View Period:</strong></label>
                     <select id="chart-period" onchange="generateCharts()" style="max-width:300px;">
-                        <option value="daily">Last 7 Days</option>
+                        <option value="daily">Last 28 Days</option>
                         <option value="weekly">Last 4 Weeks</option>
                         <option value="monthly">Last 6 Months</option>
                     </select>
@@ -173,15 +173,25 @@
                     <!-- Weekly score ring -->
                     <div id="score-ring-container" style="margin-top:20px;padding:16px;background:#f8f9fa;border-radius:10px;"></div>
 
-                    <!-- Daily bar chart -->
+                    <!-- Score line/bar chart -->
                     <div style="margin-top:20px;">
                         <h4 style="margin-bottom:10px;color:var(--primary);">Daily Performance</h4>
                         <canvas id="score-chart"></canvas>
                     </div>
 
-                    <!-- Activity breakdown horizontal bar -->
+                    <!-- Activity breakdown horizontal bar with filters -->
                     <div id="activity-chart-section" style="margin-top:24px;">
                         <h4 style="margin-bottom:6px;color:var(--primary);">Activity Breakdown <span style="font-size:12px;font-weight:normal;color:#888;">(total pts this period)</span></h4>
+                        <div id="activity-filters" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+                            <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:13px;"><input type="checkbox" checked data-activity="Sleep" onchange="updateActivityFilter()" style="width:auto;"> Sleep</label>
+                            <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:13px;"><input type="checkbox" checked data-activity="Wake-up" onchange="updateActivityFilter()" style="width:auto;"> Wake-up</label>
+                            <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:13px;"><input type="checkbox" checked data-activity="Morning Prog." onchange="updateActivityFilter()" style="width:auto;"> MP</label>
+                            <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:13px;"><input type="checkbox" checked data-activity="Chanting" onchange="updateActivityFilter()" style="width:auto;"> Chanting</label>
+                            <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:13px;"><input type="checkbox" checked data-activity="Reading" onchange="updateActivityFilter()" style="width:auto;"> Reading</label>
+                            <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:13px;"><input type="checkbox" checked data-activity="Hearing" onchange="updateActivityFilter()" style="width:auto;"> Hearing</label>
+                            <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:13px;"><input type="checkbox" checked data-activity="Notes Rev." onchange="updateActivityFilter()" style="width:auto;"> Notes</label>
+                            <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:13px;"><input type="checkbox" checked data-activity="Day Sleep" onchange="updateActivityFilter()" style="width:auto;"> Day Sleep</label>
+                        </div>
                         <canvas id="activity-chart"></canvas>
                     </div>
                 </div>
