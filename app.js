@@ -177,6 +177,7 @@ window.switchTab = (t) => {
 
 // --- 5. AUTH STATE ---
 auth.onAuthStateChanged(async (user) => {
+    console.log('Auth state changed:', user ? 'LOGGED IN uid=' + user.uid : 'LOGGED OUT');
     if (user) {
         currentUser = user;
         const userDoc = await db.collection('users').doc(user.uid).get();
@@ -372,7 +373,9 @@ if (sadhanaForm) {
             alert(`${isEdit ? 'Updated' : 'Saved'}! Score: ${total}/175 (${dayPercent}%)`);
             switchTab('reports');
         } catch (error) {
-            alert('Error saving: ' + error.message);
+            console.error('SADHANA ERROR FULL:', error);
+            console.error('Error code:', error.code);
+            alert('Error saving: ' + error.message + '\n\nCode: ' + error.code + '\n\nPath: users/' + currentUser?.uid + '/sadhana/' + date);
         }
     };
 }
@@ -1407,6 +1410,8 @@ if (tapahForm) {
         const percent = Math.round((total / 50) * 100);
 
         try {
+            console.log('Tapah submit — uid:', currentUser.uid, 'date:', date);
+            console.log('Writing to path: users/' + currentUser.uid + '/tapah/' + date);
             await db.collection('users').doc(currentUser.uid).collection('tapah').doc(date).set({
                 anukul: anukulAnswers,
                 pratikul: pratikulAnswers,
@@ -1423,7 +1428,10 @@ if (tapahForm) {
             alert(`${isEdit ? 'Updated' : 'Saved'}! Tapah Score: ${total}/50 (${percent}%)`);
             resetTapahForm();
         } catch (err) {
-            alert('Error saving Tapah: ' + err.message);
+            console.error('TAPAH ERROR FULL:', err);
+            console.error('Error code:', err.code);
+            console.error('Error message:', err.message);
+            alert('Error saving Tapah: ' + err.message + '\n\nCode: ' + err.code + '\n\nPath: users/' + currentUser?.uid + '/tapah/' + date);
         }
     };
 }
