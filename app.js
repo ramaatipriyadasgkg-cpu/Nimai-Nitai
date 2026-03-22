@@ -165,6 +165,7 @@ window.switchTab = (t) => {
 
     if (t === 'reports' && currentUser) loadReports(currentUser.uid, 'weekly-reports-container');
     if (t === 'charts' && currentUser) generateCharts();
+    if (t === 'tapah') { resetTapahForm(); }
     // Reset edit mode when leaving Daily Entry
     if (t !== 'sadhana') cancelEdit();
 };
@@ -1149,8 +1150,280 @@ function renderActivityBarChart(activityTotals) {
     });
 }
 
-// --- 10. MISC ---
-// CHANGE 1: setupDateSelect — allow past 5 days
+// ══════════════════════════════════════════════
+// --- TAPAH MODULE ---
+// ══════════════════════════════════════════════
+
+const ANUKUL_QUESTIONS = [
+    { id: 'channelWork',    label: 'Did I work on Channel work?',                    target: '30 min'  },
+    { id: 'lectureSewa',    label: 'Did I do Lecture Preparation & Lecture Sewa?',   target: '40 min'  },
+    { id: 'shlokRecite',    label: 'Did I do One Shlok Recitation with meaning?',    target: '20 min'  },
+    { id: 'healthChart',    label: 'Did I work on Health Chart?',                    target: '20 min'  },
+    { id: 'dataValidation', label: 'Did I work on Data Validation Preaching?',       target: '30 min'  },
+];
+
+const PRATIKUL_QUESTIONS = [
+    { id: 'personalProgram',  label: 'Did I do Personal Program?',                   note: 'Positive if done'   },
+    { id: 'socialMedia',      label: 'Did I spend time on Social Media & Videos?',   note: 'Negative activity'  },
+    { id: 'outsideFood',      label: 'Did I eat Outside Food?',                      note: 'Negative activity'  },
+    { id: 'withoutBhoga',     label: 'Did I eat Without Bhoga Food?',                note: 'Negative activity'  },
+    { id: 'withoutMantra',    label: 'Did I eat food without Mantra?',               note: 'Negative activity'  },
+];
+
+// Scoring rules
+// Anukul:   Yes=5, Partial=2, No=0
+// Pratikul: Yes=-5, Partial=2, No=5  (No = didn't do bad thing = good)
+function getAanukulScore(val) { return val === 'yes' ? 5 : val === 'partial' ? 2 : 0; }
+function getPratikulScore(val) { return val === 'yes' ? -5 : val === 'partial' ? 2 : 5; }
+
+let tapahEditingDate = null;
+
+// Render Yes/Partial/No toggle cards for a question list
+function renderTapahQuestions(containerId, questions, type) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    container.innerHTML = '';
+
+    questions.forEach((q, idx) => {
+        const isAnukul = type === 'anukul';
+        const div = document.createElement('div');
+        div.style.cssText = 'margin-bottom:14px;padding:14px;background:#fafafa;border-radius:10px;border:1px solid #eee;';
+        div.innerHTML = `
+            <div style="margin-bottom:10px;">
+                <span style="font-weight:600;font-size:14px;color:#2c3e50;">${idx + 1}. ${q.label}</span>
+                ${q.target ? `<span style="font-size:11px;color:#888;margin-left:6px;">⏱ ${q.target}</span>` : ''}
+                ${q.note   ? `<span style="font-size:11px;color:#aaa;margin-left:6px;">(${q.note})</span>` : ''}
+            </div>
+            <div style="display:flex;gap:8px;" data-qid="${q.id}" data-type="${type}">
+                <button type="button"
+                    onclick="selectTapahOption(this, '${q.id}', 'yes', '${type}')"
+                    data-val="yes"
+                    style="flex:1;padding:9px 4px;border-radius:8px;border:2px solid #ddd;background:#f8f9fa;color:#555;font-weight:600;width:auto;margin:0;font-size:13px;cursor:pointer;transition:all 0.15s;">
+                    ✅ Yes
+                </button>
+                <button type="button"
+                    onclick="selectTapahOption(this, '${q.id}', 'partial', '${type}')"
+                    data-val="partial"
+                    style="flex:1;padding:9px 4px;border-radius:8px;border:2px solid #ddd;background:#f8f9fa;color:#555;font-weight:600;width:auto;margin:0;font-size:13px;cursor:pointer;transition:all 0.15s;">
+                    🔶 Partial
+                </button>
+                <button type="button"
+                    onclick="selectTapahOption(this, '${q.id}', 'no', '${type}')"
+                    data-val="no"
+                    style="flex:1;padding:9px 4px;border-radius:8px;border:2px solid #ddd;background:#f8f9fa;color:#555;font-weight:600;width:auto;margin:0;font-size:13px;cursor:pointer;transition:all 0.15s;">
+                    ❌ No
+                </button>
+            </div>
+            <div id="tapah-score-preview-${q.id}" style="text-align:right;font-size:12px;color:#aaa;margin-top:5px;">Not answered</div>
+        `;
+        container.appendChild(div);
+    });
+}
+
+// Better: track answers in a plain object
+let _tapahAnswers = {};
+
+window.selectTapahOption = (btn, qid, val, type) => {
+    const group = btn.closest('[data-qid]');
+    group.querySelectorAll('button').forEach(b => {
+        b.style.border = '2px solid #ddd';
+        b.style.background = '#f8f9fa';
+        b.style.color = '#555';
+    });
+    const isAnukul = type === 'anukul';
+    let color, bg;
+    if (val === 'yes')     { color = isAnukul ? '#27ae60' : '#e74c3c'; bg = isAnukul ? '#e8f8f0' : '#fde8e8'; }
+    if (val === 'partial') { color = '#f39c12'; bg = '#fff8e8'; }
+    if (val === 'no')      { color = isAnukul ? '#e74c3c' : '#27ae60'; bg = isAnukul ? '#fde8e8' : '#e8f8f0'; }
+    btn.style.border = `2px solid ${color}`;
+    btn.style.background = bg;
+    btn.style.color = color;
+
+    _tapahAnswers[qid] = { val, type };
+
+    const score = isAnukul ? getAanukulScore(val) : getPratikulScore(val);
+    const preview = document.getElementById(`tapah-score-preview-${qid}`);
+    if (preview) {
+        preview.textContent = `Score: ${score >= 0 ? '+' : ''}${score}`;
+        preview.style.color = score > 0 ? '#27ae60' : score < 0 ? '#e74c3c' : '#888';
+    }
+
+    updateTapahTotals();
+};
+
+function updateTapahTotals() {
+    let anukulTotal = 0, pratikulTotal = 0;
+    ANUKUL_QUESTIONS.forEach(q => {
+        const ans = _tapahAnswers[q.id];
+        if (ans) anukulTotal += getAanukulScore(ans.val);
+    });
+    PRATIKUL_QUESTIONS.forEach(q => {
+        const ans = _tapahAnswers[q.id];
+        if (ans) pratikulTotal += getPratikulScore(ans.val);
+    });
+    const total = anukulTotal + pratikulTotal;
+    const percent = Math.round((total / 50) * 100);
+
+    const ad = document.getElementById('anukul-score-display');
+    const pd = document.getElementById('pratikul-score-display');
+    const td = document.getElementById('tapah-total-display');
+    const pp = document.getElementById('tapah-percent-display');
+
+    if (ad) { ad.textContent = `${anukulTotal} / 25`; ad.style.color = anukulTotal >= 15 ? '#27ae60' : anukulTotal >= 8 ? '#f39c12' : '#e74c3c'; }
+    if (pd) { pd.textContent = `${pratikulTotal} / 25`; pd.style.color = pratikulTotal >= 15 ? '#27ae60' : pratikulTotal >= 5 ? '#f39c12' : '#e74c3c'; }
+    if (td) { td.textContent = `${total} / 50`; td.style.color = total >= 35 ? '#27ae60' : total >= 20 ? '#f39c12' : '#e74c3c'; }
+    if (pp) { pp.textContent = `${percent}%`; }
+}
+
+function setupTapahDateSelect() {
+    const s = document.getElementById('tapah-date');
+    if (!s) return;
+    s.innerHTML = '';
+    for (let i = 0; i < 5; i++) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const iso = d.toISOString().split('T')[0];
+        const opt = document.createElement('option');
+        opt.value = iso;
+        opt.textContent = i === 0 ? `Today (${iso})` : i === 1 ? `Yesterday (${iso})` : iso;
+        s.appendChild(opt);
+    }
+}
+
+function resetTapahForm() {
+    _tapahAnswers = {};
+    renderTapahQuestions('anukul-questions', ANUKUL_QUESTIONS, 'anukul');
+    renderTapahQuestions('pratikul-questions', PRATIKUL_QUESTIONS, 'pratikul');
+    updateTapahTotals();
+    setupTapahDateSelect();
+    const sel = document.getElementById('tapah-date');
+    if (sel) sel.disabled = false;
+    const btn = document.getElementById('tapah-submit-btn');
+    if (btn) btn.textContent = '🔥 Submit Tapah';
+    const banner = document.getElementById('tapah-edit-banner');
+    if (banner) banner.style.display = 'none';
+    tapahEditingDate = null;
+}
+
+window.cancelTapahEdit = () => resetTapahForm();
+
+// Restore button states from saved answers
+function restoreTapahButtons(anukulAnswers, pratikulAnswers) {
+    const restore = (questions, answersObj, type) => {
+        questions.forEach(q => {
+            const val = answersObj[q.id];
+            if (!val || val === 'nr') return;
+            const group = document.querySelector(`[data-qid="${q.id}"]`);
+            if (!group) return;
+            const btn = [...group.querySelectorAll('button')].find(b => b.dataset.val === val);
+            if (btn) window.selectTapahOption(btn, q.id, val, type);
+        });
+    };
+    restore(ANUKUL_QUESTIONS, anukulAnswers, 'anukul');
+    restore(PRATIKUL_QUESTIONS, pratikulAnswers, 'pratikul');
+}
+
+// Edit a past Tapah entry
+window.editTapahEntry = async (dateStr) => {
+    // Switch to tapah tab
+    document.querySelectorAll('.tab-content').forEach(el => { el.classList.remove('active'); el.classList.add('hidden'); });
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    const tab = document.getElementById('tapah-tab');
+    if (tab) { tab.classList.remove('hidden'); tab.classList.add('active'); }
+    const btn = document.querySelector(`button[onclick*="switchTab('tapah')"]`);
+    if (btn) btn.classList.add('active');
+
+    resetTapahForm();
+
+    const snap = await db.collection('users').doc(currentUser.uid).collection('tapah').doc(dateStr).get();
+    if (snap.exists) {
+        const d = snap.data();
+        restoreTapahButtons(d.anukul || {}, d.pratikul || {});
+    }
+
+    // Lock date
+    const sel = document.getElementById('tapah-date');
+    let found = false;
+    if (sel) {
+        for (const opt of sel.options) { if (opt.value === dateStr) { opt.selected = true; found = true; break; } }
+        if (!found) {
+            const opt = document.createElement('option');
+            opt.value = dateStr; opt.textContent = dateStr;
+            sel.insertBefore(opt, sel.firstChild);
+            sel.value = dateStr;
+        }
+        sel.disabled = true;
+    }
+
+    tapahEditingDate = dateStr;
+    const banner = document.getElementById('tapah-edit-banner');
+    const bannerText = document.getElementById('tapah-edit-banner-text');
+    if (banner) banner.style.display = 'flex';
+    if (bannerText) bannerText.textContent = `Editing Tapah: ${dateStr}`;
+    document.getElementById('tapah-submit-btn').textContent = '💾 Update Tapah';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+
+// Tapah form submit
+const tapahForm = document.getElementById('tapah-form');
+if (tapahForm) {
+    tapahForm.onsubmit = async (e) => {
+        e.preventDefault();
+        if (!currentUser) { alert('Please login first'); return; }
+
+        const date = document.getElementById('tapah-date').value;
+
+        // Validate all answered
+        const allQids = [...ANUKUL_QUESTIONS, ...PRATIKUL_QUESTIONS].map(q => q.id);
+        const unanswered = allQids.filter(id => !_tapahAnswers[id]);
+        if (unanswered.length > 0) {
+            alert(`Please answer all questions before submitting. (${unanswered.length} unanswered)`);
+            return;
+        }
+
+        // Build scores
+        const anukulScores = {}, pratikulScores = {}, anukulAnswers = {}, pratikulAnswers = {};
+        let anukulTotal = 0, pratikulTotal = 0;
+
+        ANUKUL_QUESTIONS.forEach(q => {
+            const val = _tapahAnswers[q.id]?.val || 'no';
+            anukulAnswers[q.id] = val;
+            anukulScores[q.id] = getAanukulScore(val);
+            anukulTotal += anukulScores[q.id];
+        });
+        PRATIKUL_QUESTIONS.forEach(q => {
+            const val = _tapahAnswers[q.id]?.val || 'no';
+            pratikulAnswers[q.id] = val;
+            pratikulScores[q.id] = getPratikulScore(val);
+            pratikulTotal += pratikulScores[q.id];
+        });
+
+        const total = anukulTotal + pratikulTotal;
+        const percent = Math.round((total / 50) * 100);
+
+        try {
+            await db.collection('users').doc(currentUser.uid).collection('tapah').doc(date).set({
+                anukul: anukulAnswers,
+                pratikul: pratikulAnswers,
+                anukulScores,
+                pratikulScores,
+                anukulTotal,
+                pratikulTotal,
+                totalScore: total,
+                percent,
+                submittedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+
+            const isEdit = tapahEditingDate !== null;
+            alert(`${isEdit ? 'Updated' : 'Saved'}! Tapah Score: ${total}/50 (${percent}%)`);
+            resetTapahForm();
+        } catch (err) {
+            alert('Error saving Tapah: ' + err.message);
+        }
+    };
+}
+
+// ── END TAPAH MODULE ──
 function setupDateSelect() {
     const s = document.getElementById('sadhana-date');
     if (!s) return;
