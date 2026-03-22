@@ -253,17 +253,33 @@
             </div>
 
             <div id="reports-tab" class="tab-content hidden">
-                <button onclick="downloadUserExcel(currentUser.uid, userProfile.name)" style="background:var(--success); margin-bottom:15px">Download My History (Excel)</button>
-                
-                <!-- 4-Week Comparison -->
-                <div class="card" style="margin-bottom: 20px;">
-                    <h3 style="margin-bottom: 15px; color: var(--primary);">Last 4 Weeks Comparison</h3>
-                    <div id="four-week-comparison" style="overflow-x: auto;"></div>
+                <!-- Report Type Toggle -->
+                <div style="display:flex;gap:10px;margin-bottom:16px;">
+                    <button id="report-sadhana-btn" onclick="switchReport('sadhana')"
+                        style="flex:1;padding:10px;border-radius:20px;background:var(--secondary);color:white;font-weight:600;border:none;">
+                        📿 Sadhana
+                    </button>
+                    <button id="report-tapah-btn" onclick="switchReport('tapah')"
+                        style="flex:1;padding:10px;border-radius:20px;background:#eee;color:#666;font-weight:600;border:none;">
+                        🔥 Tapah
+                    </button>
                 </div>
 
-                <!-- Weekly Details -->
-                <h3 style="margin-bottom: 15px; color: var(--primary);">Detailed Weekly Reports</h3>
-                <div id="weekly-reports-container"></div>
+                <!-- SADHANA REPORTS -->
+                <div id="sadhana-reports-panel">
+                    <button onclick="downloadUserExcel(currentUser.uid, userProfile.name)" style="background:var(--success); margin-bottom:15px">📥 Download My History (Excel)</button>
+                    <div class="card" style="margin-bottom: 20px;">
+                        <h3 style="margin-bottom: 15px; color: var(--primary);">Last 4 Weeks Comparison</h3>
+                        <div id="four-week-comparison" style="overflow-x: auto;"></div>
+                    </div>
+                    <h3 style="margin-bottom: 15px; color: var(--primary);">Detailed Weekly Reports</h3>
+                    <div id="weekly-reports-container"></div>
+                </div>
+
+                <!-- TAPAH REPORTS -->
+                <div id="tapah-reports-panel" style="display:none;">
+                    <div id="tapah-report-container"></div>
+                </div>
             </div>
 
             <div id="charts-tab" class="tab-content hidden">
