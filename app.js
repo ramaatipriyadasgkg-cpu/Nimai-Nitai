@@ -304,6 +304,45 @@ if (sadhanaForm) {
         const dayPercent = Math.round((total / 175) * 100);
 
         try {
+            // Save edit history before overwriting if editing
+            if (editingDate !== null) {
+                const prevSnap = await db.collection('users').doc(currentUser.uid).collection('sadhana').doc(date).get();
+                if (prevSnap.exists) {
+                    const prevData = prevSnap.data();
+                    const historyEntry = {
+                        changedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                        changedBy: userProfile.name || currentUser.email,
+                        before: {
+                            sleepTime: prevData.sleepTime,
+                            wakeupTime: prevData.wakeupTime,
+                            morningProgramTime: prevData.morningProgramTime,
+                            chantingTime: prevData.chantingTime,
+                            readingMinutes: prevData.readingMinutes,
+                            hearingMinutes: prevData.hearingMinutes,
+                            notesMinutes: prevData.notesMinutes,
+                            daySleepMinutes: prevData.daySleepMinutes,
+                            totalScore: prevData.totalScore,
+                            dayPercent: prevData.dayPercent
+                        },
+                        after: {
+                            sleepTime: slp,
+                            wakeupTime: wak,
+                            morningProgramTime: mpNotDone ? 'Not Done' : mpTime,
+                            chantingTime: chn,
+                            readingMinutes: rMin,
+                            hearingMinutes: hMin,
+                            notesMinutes: nMin,
+                            daySleepMinutes: dsMin,
+                            totalScore: total,
+                            dayPercent: dayPercent
+                        }
+                    };
+                    await db.collection('users').doc(currentUser.uid)
+                        .collection('sadhana').doc(date)
+                        .collection('editHistory').add(historyEntry);
+                }
+            }
+
             await db.collection('users').doc(currentUser.uid).collection('sadhana').doc(date).set({
                 sleepTime: slp,
                 wakeupTime: wak,
@@ -398,6 +437,84 @@ function cancelEdit() {
 }
 window.cancelEdit = cancelEdit;
 
+// --- EDIT HISTORY MODAL ---
+window.viewEditHistory = async (dateStr) => {
+    const histSnap = await db.collection('users').doc(currentUser.uid)
+        .collection('sadhana').doc(dateStr)
+        .collection('editHistory')
+        .orderBy('changedAt', 'asc')
+        .get();
+
+    let modalContent = '';
+    if (histSnap.empty) {
+        modalContent = '<p style="color:#999;text-align:center;padding:20px;">No edit history found for this entry.<br><small>History is recorded from the next edit onwards.</small></p>';
+    } else {
+        const fieldLabels = {
+            sleepTime: 'Bed Time', wakeupTime: 'Wake Up', morningProgramTime: 'Morning Prog.',
+            chantingTime: 'Chanting', readingMinutes: 'Reading (mins)', hearingMinutes: 'Hearing (mins)',
+            notesMinutes: 'Notes (mins)', daySleepMinutes: 'Day Sleep (mins)',
+            totalScore: 'Total Score', dayPercent: 'Day %'
+        };
+
+        histSnap.forEach((doc, idx) => {
+            const h = doc.data();
+            const when = h.changedAt?.toDate
+                ? h.changedAt.toDate().toLocaleString('en-GB', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })
+                : 'Unknown time';
+
+            let changesHTML = '';
+            Object.keys(fieldLabels).forEach(field => {
+                const bVal = h.before?.[field] ?? '—';
+                const aVal = h.after?.[field] ?? '—';
+                if (String(bVal) !== String(aVal)) {
+                    changesHTML += `
+                        <tr>
+                            <td style="padding:6px 10px;color:#555;font-size:13px;">${fieldLabels[field]}</td>
+                            <td style="padding:6px 10px;color:#e74c3c;font-size:13px;">${bVal}</td>
+                            <td style="padding:6px 10px;color:#27ae60;font-size:13px;">${aVal}</td>
+                        </tr>`;
+                }
+            });
+
+            if (!changesHTML) changesHTML = '<tr><td colspan="3" style="padding:6px 10px;color:#999;font-size:12px;">No field differences recorded</td></tr>';
+
+            modalContent += `
+                <div style="margin-bottom:16px;border:1px solid #e0e0e0;border-radius:8px;overflow:hidden;">
+                    <div style="background:#f0f4ff;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;">
+                        <strong style="font-size:13px;color:#2c3e50;">Edit #${idx + 1}</strong>
+                        <span style="font-size:12px;color:#666;">🕓 ${when} &nbsp; by <strong>${h.changedBy || 'Unknown'}</strong></span>
+                    </div>
+                    <table style="width:100%;border-collapse:collapse;">
+                        <thead><tr style="background:#fafafa;">
+                            <th style="padding:6px 10px;font-size:12px;text-align:left;color:#888;font-weight:600;">Field</th>
+                            <th style="padding:6px 10px;font-size:12px;text-align:left;color:#e74c3c;font-weight:600;">Before</th>
+                            <th style="padding:6px 10px;font-size:12px;text-align:left;color:#27ae60;font-weight:600;">After</th>
+                        </tr></thead>
+                        <tbody>${changesHTML}</tbody>
+                    </table>
+                </div>`;
+        });
+    }
+
+    // Show modal
+    let modal = document.getElementById('edit-history-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'edit-history-modal';
+        modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+        modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+        document.body.appendChild(modal);
+    }
+    modal.innerHTML = `
+        <div style="background:white;border-radius:12px;max-width:640px;width:100%;max-height:80vh;overflow-y:auto;padding:24px;box-shadow:0 10px 40px rgba(0,0,0,0.3);">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+                <h3 style="margin:0;color:#2c3e50;">🕓 Edit History — ${dateStr}</h3>
+                <button onclick="document.getElementById('edit-history-modal').remove()" style="width:auto;padding:4px 12px;background:#95a5a6;font-size:13px;">✕ Close</button>
+            </div>
+            ${modalContent}
+        </div>`;
+};
+
 // --- SCORE BACKGROUND ---
 function getScoreBackground(score) {
     if (score === null || score === undefined) return '#ffcdd2';
@@ -413,12 +530,6 @@ async function loadReports(userId, containerId) {
     const container = document.getElementById(containerId);
     const snap = await db.collection('users').doc(userId).collection('sadhana').get();
 
-    if (snap.empty) {
-        container.innerHTML = '<p style="text-align:center; color:#999; padding:40px;">No sadhana data yet. Start tracking!</p>';
-        document.getElementById('four-week-comparison').innerHTML = '';
-        return;
-    }
-
     const weeksData = {};
     snap.forEach(doc => {
         const weekInfo = getWeekInfo(doc.id);
@@ -428,13 +539,42 @@ async function loadReports(userId, containerId) {
         weeksData[weekInfo.sunStr].days[doc.id] = doc.data();
     });
 
-    const sortedWeeks = Object.keys(weeksData).sort((a, b) => b.localeCompare(a));
-    generate4WeekComparison(sortedWeeks.slice(0, 4), weeksData);
+    // Always show last 4 calendar weeks (NR for gaps)
+    const today = new Date();
+    const thisWeekSun = new Date(today);
+    thisWeekSun.setDate(today.getDate() - today.getDay());
+
+    // Build a set of ALL weeks to show: last 4 + any older weeks with data
+    const last4Suns = new Set();
+    for (let w = 0; w < 4; w++) {
+        const sun = new Date(thisWeekSun);
+        sun.setDate(thisWeekSun.getDate() - w * 7);
+        const sunStr = sun.toISOString().split('T')[0];
+        last4Suns.add(sunStr);
+        // Ensure these weeks exist in weeksData even if empty
+        if (!weeksData[sunStr]) {
+            const sat = new Date(sun); sat.setDate(sun.getDate() + 6);
+            const fmt = d => `${String(d.getDate()).padStart(2,'0')} ${d.toLocaleString('en-GB',{month:'short'})}`;
+            weeksData[sunStr] = { label: `${fmt(sun)} to ${fmt(sat)}_${sun.getFullYear()}`, sunStr, days: {} };
+        }
+    }
+
+    // 4-week comparison (always runs with weeksData)
+    generate4WeekComparison([], weeksData);
+
+    if (snap.empty && Object.keys(weeksData).every(k => Object.keys(weeksData[k].days).length === 0)) {
+        container.innerHTML = '<p style="text-align:center; color:#999; padding:40px;">No sadhana data yet. Start tracking!</p>';
+        return;
+    }
+
+    // All weeks to display: last 4 + older filled weeks, newest first
+    const allSuns = new Set([...last4Suns, ...Object.keys(weeksData)]);
+    const sortedWeeks = Array.from(allSuns).sort((a, b) => b.localeCompare(a));
 
     let html = '';
     sortedWeeks.forEach(sunStr => {
         const week = weeksData[sunStr];
-        const weekStart = new Date(week.sunStr);
+        const weekStart = new Date(sunStr);
         const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
         let weekTotals = { total: 0, readingMins: 0, hearingMins: 0, notesMins: 0, notesMarks: 0, sleepMarks: 0, wakeupMarks: 0, morningMarks: 0, chantingMarks: 0, readingMarks: 0, hearingMarks: 0, daySleepMarks: 0 };
@@ -464,9 +604,10 @@ async function loadReports(userId, containerId) {
             const percentColor = dayPercent >= 80 ? 'green' : dayPercent >= 60 ? 'orange' : 'red';
             const mpDisplay = entry.morningProgramTime === 'Not Done' ? '<span style="color:#e74c3c;font-size:0.85em;">Not Done</span>' : (entry.morningProgramTime || 'NR');
 
-            // CHANGE 2: Edit button on each day row
+            // CHANGE 2: Edit + History buttons on each day row
             const editBtn = !isNR
-                ? `<button onclick="editEntry('${dateStr}')" style="padding:2px 8px;font-size:11px;background:#3498db;width:auto;margin:0;border-radius:4px;">✏️ Edit</button>`
+                ? `<button onclick="editEntry('${dateStr}')" style="padding:2px 8px;font-size:11px;background:#3498db;width:auto;margin:0 2px 2px 0;border-radius:4px;">✏️ Edit</button>
+                   <button onclick="viewEditHistory('${dateStr}')" style="padding:2px 8px;font-size:11px;background:#9b59b6;width:auto;margin:0;border-radius:4px;">🕓 History</button>`
                 : `<button onclick="editEntry('${dateStr}')" style="padding:2px 8px;font-size:11px;background:#27ae60;width:auto;margin:0;border-radius:4px;">+ Fill</button>`;
 
             tableRows += `
@@ -496,23 +637,31 @@ async function loadReports(userId, containerId) {
         let adjustedNotesMarks = weekTotals.notesMarks;
         if (weekTotals.notesMins >= 245) adjustedNotesMarks = 175;
         const adjustedTotal = weekTotals.total - weekTotals.notesMarks + adjustedNotesMarks;
+        // Fair denominator: count only past days (not future days in current week)
+        let elapsedDays = 0;
+        for (let i = 0; i < 7; i++) {
+            const d = new Date(weekStart); d.setDate(weekStart.getDate() + i);
+            if (d <= new Date()) elapsedDays++;
+        }
+        const fairMax = elapsedDays * 175;
         const weekPercent = Math.round((adjustedTotal / 1225) * 100);
+        const fairPercent = fairMax > 0 ? Math.round((adjustedTotal / fairMax) * 100) : 0;
         const weekClass = adjustedTotal < 735 ? 'low-score' : '';
 
         html += `
             <div class="week-card ${weekClass}">
                 <div class="week-header" onclick="this.nextElementSibling.classList.toggle('expanded'); this.querySelector('.toggle-icon').textContent = this.nextElementSibling.classList.contains('expanded') ? '▼' : '▶';">
                     <span>${week.label.split('_')[0]}</span>
-                    <span>${adjustedTotal}/1225 (${weekPercent}%) <span class="toggle-icon">▶</span></span>
+                    <span>${adjustedTotal}/${fairMax} &nbsp;|&nbsp; Fair: ${fairPercent}% &nbsp;|&nbsp; Overall: ${weekPercent}% <span class="toggle-icon">▶</span></span>
                 </div>
                 <div class="week-content">
                     <div style="overflow-x:auto;">
                     <table class="daily-table">
                         <thead>
                             <tr style="background:var(--secondary);color:black;">
-                                <th>Day</th><th>1.To Bed</th><th>Mks</th><th>2. Wake Up</th><th>Mks</th>
-                                <th>3. Japa</th><th>Mks</th><th>4. MP</th><th>Mks</th><th>5. DS</th><th>Mks</th>
-                                <th>6. Pathan</th><th>Mks</th><th>7. Sarwan</th><th>Mks</th><th>8. Ntes Rev.</th><th>Mks</th><th>Day Wise</th>
+                                <th>Day</th><th>Bed Time</th><th>Mks</th><th>Wake Up</th><th>Mks</th>
+                                <th>Japa</th><th>Mks</th><th>Morn. Prog</th><th>Mks</th><th>Day Sleep</th><th>Mks</th>
+                                <th>Pathan</th><th>Mks</th><th>Sarwan</th><th>Mks</th><th>Notes Rev.</th><th>Mks</th><th>Day %</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -544,7 +693,10 @@ async function loadReports(userId, containerId) {
                     </table>
                     </div>
                     <div style="margin-top:15px;padding:15px;background:var(--secondary);color:white;border-radius:8px;text-align:center;">
-                        <strong style="font-size:1.3em;">OVERALL: ${adjustedTotal}/1225 (${weekPercent}%)</strong>
+                        <strong style="font-size:1.2em;">OVERALL: ${adjustedTotal}/1225 (${weekPercent}%)</strong>
+                        &nbsp;&nbsp;|&nbsp;&nbsp;
+                        <strong style="font-size:1.2em;">Fair %: ${adjustedTotal}/${fairMax} (${fairPercent}%)</strong>
+                        <div style="font-size:11px;opacity:0.85;margin-top:4px;">Fair % = score ÷ (${elapsedDays} elapsed days × 175)</div>
                     </div>
                 </div>
             </div>
@@ -554,48 +706,100 @@ async function loadReports(userId, containerId) {
     container.innerHTML = html;
 }
 
-// 4-week comparison
-function generate4WeekComparison(weeks, weeksData) {
+// 4-week comparison — always shows 4 weeks (NR for missing), trend oldest→newest, fair denominator
+function generate4WeekComparison(weeksNewestFirst, weeksData) {
     const container = document.getElementById('four-week-comparison');
     if (!container) return;
-    if (weeks.length === 0) { container.innerHTML = '<p style="color:#999;text-align:center;">Not enough data for comparison</p>'; return; }
 
-    let tableHTML = `<table class="comparison-table"><thead><tr><th>Week</th><th>Total Score</th><th>Percentage</th><th>Trend</th></tr></thead><tbody>`;
-    let previousPercent = null;
+    // Build exactly 4 week-sun-strings going back from today (Sun-anchored), newest first
+    const today = new Date();
+    const thisWeekSun = new Date(today);
+    thisWeekSun.setDate(today.getDate() - today.getDay());
 
-    weeks.forEach(sunStr => {
+    const last4Suns = [];
+    for (let w = 3; w >= 0; w--) {
+        const sun = new Date(thisWeekSun);
+        sun.setDate(thisWeekSun.getDate() - w * 7);
+        last4Suns.push(sun.toISOString().split('T')[0]);
+    }
+
+    // Compute stats for each of the 4 weeks (oldest first for trend calculation)
+    const weekStats = last4Suns.map(sunStr => {
         const week = weeksData[sunStr];
-        const weekStart = new Date(week.sunStr);
-        let weekTotal = 0, weekNotesMins = 0, weekNotesMarks = 0;
+        const weekStart = new Date(sunStr);
+        let weekTotal = 0, weekNotesMins = 0, weekNotesMarks = 0, filledDays = 0;
 
         for (let i = 0; i < 7; i++) {
             const currentDate = new Date(weekStart);
-            currentDate.setDate(currentDate.getDate() + i);
+            currentDate.setDate(weekStart.getDate() + i);
             const dateStr = currentDate.toISOString().split('T')[0];
-            const entry = week.days[dateStr] || getNRData(dateStr);
+            const isFuture = new Date(dateStr) > today;
+            if (isFuture) continue; // skip future days entirely for fair denominator
+            const entry = (week && week.days[dateStr]) ? week.days[dateStr] : getNRData(dateStr);
+            const isFilled = !!(week && week.days[dateStr]);
             weekTotal += entry.totalScore ?? 0;
-            weekNotesMins += entry.notesMinutes || 0;
+            weekNotesMins += (isFilled && entry.notesMinutes !== 'NR') ? (entry.notesMinutes || 0) : 0;
             weekNotesMarks += entry.scores?.notes || 0;
+            filledDays++;
         }
 
         let adjustedNotesMarks = weekNotesMarks;
         if (weekNotesMins >= 245) adjustedNotesMarks = 175;
         const adjustedTotal = weekTotal - weekNotesMarks + adjustedNotesMarks;
-        const weekPercent = Math.round((adjustedTotal / 1225) * 100);
+        // Fair denominator: only count elapsed days in week (not future)
+        const maxPossible = filledDays * 175;
+        const fairPercent = maxPossible > 0 ? Math.round((adjustedTotal / maxPossible) * 100) : 0;
+        const rawPercent = Math.round((adjustedTotal / 1225) * 100);
 
-        let trendIcon = '—', trendColor = '#666';
-        if (previousPercent !== null) {
-            const diff = weekPercent - previousPercent;
-            if (diff > 0) { trendIcon = `▲ +${diff}%`; trendColor = 'green'; }
-            else if (diff < 0) { trendIcon = `▼ ${diff}%`; trendColor = 'red'; }
-        }
-        previousPercent = weekPercent;
-        const percentColor = weekPercent >= 80 ? 'green' : weekPercent >= 60 ? 'orange' : 'red';
+        // Label
+        const sunDate = new Date(sunStr);
+        const sat = new Date(sunStr); sat.setDate(sunDate.getDate() + 6);
+        const fmt = d => `${String(d.getDate()).padStart(2,'0')} ${d.toLocaleString('en-GB',{month:'short'})}`;
+        const label = `${fmt(sunDate)} – ${fmt(sat)}`;
 
-        tableHTML += `<tr><td><strong>${week.label.split('_')[0]}</strong></td><td><strong>${adjustedTotal}/1225</strong></td><td style="color:${percentColor};font-weight:bold;font-size:1.1em;">${weekPercent}%</td><td style="color:${trendColor};font-weight:bold;">${trendIcon}</td></tr>`;
+        return { sunStr, label, adjustedTotal, maxPossible, fairPercent, rawPercent, filledDays };
     });
 
-    tableHTML += `</tbody></table>`;
+    // Now build table (oldest first = weekStats[0])
+    let tableHTML = `
+        <table class="comparison-table">
+            <thead><tr>
+                <th>Week</th>
+                <th>Score</th>
+                <th>Fair %<br><span style="font-size:10px;font-weight:normal;">(÷ elapsed days)</span></th>
+                <th>Overall %<br><span style="font-size:10px;font-weight:normal;">(÷ 1225)</span></th>
+                <th>Trend</th>
+            </tr></thead>
+            <tbody>`;
+
+    let previousFairPercent = null;
+    weekStats.forEach((ws, idx) => {
+        let trendIcon = idx === 0 ? '—' : '', trendColor = '#666';
+        if (idx > 0 && previousFairPercent !== null) {
+            const diff = ws.fairPercent - previousFairPercent;
+            if (diff > 0) { trendIcon = `▲ +${diff}%`; trendColor = '#27ae60'; }
+            else if (diff < 0) { trendIcon = `▼ ${diff}%`; trendColor = '#e74c3c'; }
+            else { trendIcon = '→ 0%'; trendColor = '#666'; }
+        }
+        previousFairPercent = ws.fairPercent;
+        const fairColor = ws.fairPercent >= 80 ? '#27ae60' : ws.fairPercent >= 60 ? '#f39c12' : '#e74c3c';
+        const rawColor  = ws.rawPercent  >= 80 ? '#27ae60' : ws.rawPercent  >= 60 ? '#f39c12' : '#e74c3c';
+
+        tableHTML += `
+            <tr>
+                <td><strong>${ws.label}</strong></td>
+                <td><strong>${ws.adjustedTotal}/${ws.maxPossible}</strong></td>
+                <td style="color:${fairColor};font-weight:bold;font-size:1.05em;">${ws.fairPercent}%</td>
+                <td style="color:${rawColor};font-weight:bold;font-size:1.05em;">${ws.rawPercent}%</td>
+                <td style="color:${trendColor};font-weight:bold;">${trendIcon}</td>
+            </tr>`;
+    });
+
+    tableHTML += `</tbody></table>
+        <p style="margin-top:8px;font-size:11px;color:#888;">
+            <strong>Fair %</strong> = score ÷ (elapsed days × 175) — excludes future days &amp; compares weeks fairly.<br>
+            <strong>Overall %</strong> = score ÷ 1225 (full week max) — traditional view.
+        </p>`;
     container.innerHTML = tableHTML;
 }
 
@@ -607,15 +811,19 @@ async function generateCharts() {
     else if (period === 'monthly') await generateMonthlyCharts();
 }
 
+// Global store for activity chart data (for filter updates)
+let _currentActivityTotals = null;
+
 async function generateDailyCharts() {
     const today = new Date();
     const dates = [];
-    for (let i = 6; i >= 0; i--) {
+    for (let i = 27; i >= 0; i--) {
         const d = new Date(today);
         d.setDate(today.getDate() - i);
         dates.push(d.toISOString().split('T')[0]);
     }
 
+    // Firestore 'in' query max 30 docs — fetch in one batch (28 ≤ 30 ✓)
     const snapshot = await db.collection('users').doc(currentUser.uid)
         .collection('sadhana')
         .where(firebase.firestore.FieldPath.documentId(), 'in', dates)
@@ -625,27 +833,29 @@ async function generateDailyCharts() {
     snapshot.forEach(doc => { data[doc.id] = doc.data(); });
 
     const labels = dates.map(d => new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }));
-    const scores = dates.map(d => data[d]?.totalScore || 0);
+    const scores = dates.map(d => data[d]?.totalScore ?? null); // null = no entry
 
-    // Activity-wise total marks for the week (for ring + bar chart)
-    const activityTotals = {
-        Sleep: dates.reduce((s, d) => s + (data[d]?.scores?.sleep || 0), 0),
-        'Wake-up': dates.reduce((s, d) => s + (data[d]?.scores?.wakeup || 0), 0),
-        Chanting: dates.reduce((s, d) => s + (data[d]?.scores?.chanting || 0), 0),
-        Reading: dates.reduce((s, d) => s + (data[d]?.scores?.reading || 0), 0),
-        Hearing: dates.reduce((s, d) => s + (data[d]?.scores?.hearing || 0), 0),
-        'Notes Rev.': dates.reduce((s, d) => s + (data[d]?.scores?.notes || 0), 0),
-        'Day Sleep': dates.reduce((s, d) => s + (data[d]?.scores?.daySleep || 0), 0),
+    // Activity-wise total marks (sum across all 28 days)
+    _currentActivityTotals = {
+        Sleep:          dates.reduce((s, d) => s + (data[d]?.scores?.sleep || 0), 0),
+        'Wake-up':      dates.reduce((s, d) => s + (data[d]?.scores?.wakeup || 0), 0),
+        'Morning Prog.':dates.reduce((s, d) => s + (data[d]?.scores?.morningProgram || 0), 0),
+        Chanting:       dates.reduce((s, d) => s + (data[d]?.scores?.chanting || 0), 0),
+        Reading:        dates.reduce((s, d) => s + (data[d]?.scores?.reading || 0), 0),
+        Hearing:        dates.reduce((s, d) => s + (data[d]?.scores?.hearing || 0), 0),
+        'Notes Rev.':   dates.reduce((s, d) => s + (data[d]?.scores?.notes || 0), 0),
+        'Day Sleep':    dates.reduce((s, d) => s + (data[d]?.scores?.daySleep || 0), 0),
     };
 
-    // Weekly score ring: total out of max possible for days with data
+    // Ring: based on days with data only
     const submittedDays = dates.filter(d => data[d]).length;
     const maxPossible = submittedDays * 175;
-    const totalEarned = scores.reduce((a, b) => a + b, 0);
+    const totalEarned = scores.filter(s => s !== null).reduce((a, b) => a + b, 0);
     const weekPercent = maxPossible > 0 ? Math.round((totalEarned / maxPossible) * 100) : 0;
 
-    renderScoreRing(weekPercent, `${dates[0].slice(5).replace('-','/')} – ${dates[6].slice(5).replace('-','/')}`, submittedDays, totalEarned);
-    renderActivityBarChart(activityTotals, labels, scores);
+    renderScoreRing(weekPercent, `${dates[0].slice(5).replace('-','/')} – ${dates[27].slice(5).replace('-','/')}`, submittedDays, totalEarned);
+    renderScoreLineChart(labels, scores, 'line');
+    renderActivityBarChart(_currentActivityTotals);
 }
 
 async function generateWeeklyCharts() {
@@ -659,7 +869,7 @@ async function generateWeeklyCharts() {
 
     const labels = [];
     const scores = [];
-    const weekActivityTotals = { Sleep: 0, 'Wake-up': 0, Chanting: 0, Reading: 0, Hearing: 0, 'Notes Rev.': 0, 'Day Sleep': 0 };
+    _currentActivityTotals = { Sleep: 0, 'Wake-up': 0, 'Morning Prog.': 0, Chanting: 0, Reading: 0, Hearing: 0, 'Notes Rev.': 0, 'Day Sleep': 0 };
     let latestWeekTotal = 0, latestWeekDays = 0;
 
     for (let wi = 0; wi < weeks.length; wi++) {
@@ -681,21 +891,21 @@ async function generateWeeklyCharts() {
         snapshot.forEach(doc => { wData[doc.id] = doc.data(); weekTotal += doc.data().totalScore || 0; weekDayCount++; });
 
         labels.push(`Wk ${weekStart.getDate()}/${weekStart.getMonth() + 1}`);
-        scores.push(weekTotal);
+        scores.push(weekDayCount > 0 ? weekTotal : null);
 
-        // Use latest (most recent) week for ring + bar
         if (wi === weeks.length - 1) {
             latestWeekTotal = weekTotal;
             latestWeekDays = weekDayCount;
             weekDates.forEach(d => {
                 if (wData[d]) {
-                    weekActivityTotals['Sleep'] += wData[d]?.scores?.sleep || 0;
-                    weekActivityTotals['Wake-up'] += wData[d]?.scores?.wakeup || 0;
-                    weekActivityTotals['Chanting'] += wData[d]?.scores?.chanting || 0;
-                    weekActivityTotals['Reading'] += wData[d]?.scores?.reading || 0;
-                    weekActivityTotals['Hearing'] += wData[d]?.scores?.hearing || 0;
-                    weekActivityTotals['Notes Rev.'] += wData[d]?.scores?.notes || 0;
-                    weekActivityTotals['Day Sleep'] += wData[d]?.scores?.daySleep || 0;
+                    _currentActivityTotals['Sleep']          += wData[d]?.scores?.sleep || 0;
+                    _currentActivityTotals['Wake-up']        += wData[d]?.scores?.wakeup || 0;
+                    _currentActivityTotals['Morning Prog.']  += wData[d]?.scores?.morningProgram || 0;
+                    _currentActivityTotals['Chanting']       += wData[d]?.scores?.chanting || 0;
+                    _currentActivityTotals['Reading']        += wData[d]?.scores?.reading || 0;
+                    _currentActivityTotals['Hearing']        += wData[d]?.scores?.hearing || 0;
+                    _currentActivityTotals['Notes Rev.']     += wData[d]?.scores?.notes || 0;
+                    _currentActivityTotals['Day Sleep']      += wData[d]?.scores?.daySleep || 0;
                 }
             });
         }
@@ -706,7 +916,8 @@ async function generateWeeklyCharts() {
     const dateRange = `${weeks[weeks.length-1].getDate()}/${weeks[weeks.length-1].getMonth()+1} – week`;
 
     renderScoreRing(weekPercent, dateRange, latestWeekDays, latestWeekTotal);
-    renderActivityBarChart(weekActivityTotals, labels, scores);
+    renderScoreLineChart(labels, scores, 'line');
+    renderActivityBarChart(_currentActivityTotals);
 }
 
 async function generateMonthlyCharts() {
@@ -716,6 +927,7 @@ async function generateMonthlyCharts() {
 
     const labels = [];
     const scores = [];
+    _currentActivityTotals = null; // no activity bar for monthly
 
     for (const month of months) {
         const startDate = new Date(month.getFullYear(), month.getMonth(), 1);
@@ -730,13 +942,14 @@ async function generateMonthlyCharts() {
         let monthTotal = 0, monthDays = 0;
         snapshot.forEach(doc => { monthTotal += doc.data().totalScore || 0; monthDays++; });
         labels.push(month.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }));
-        scores.push(monthTotal);
+        scores.push(monthDays > 0 ? monthTotal : null);
     }
 
-    // For monthly, just show the total score bar chart (no ring — too broad)
-    renderActivityBarChart(null, labels, scores);
-    // Hide ring for monthly
     document.getElementById('score-ring-container').style.display = 'none';
+    renderScoreLineChart(labels, scores, 'line');
+    // Hide activity chart for monthly
+    const actSection = document.getElementById('activity-chart-section');
+    if (actSection) actSection.style.display = 'none';
 }
 
 // --- CHANGE 4: Render score ring (donut) ---
@@ -776,28 +989,33 @@ function renderScoreRing(percent, dateRange, days, totalPts) {
     `;
 }
 
-// --- CHANGE 4: Render horizontal bar chart (activity breakdown) + score line chart ---
-function renderActivityBarChart(activityTotals, labels, scores) {
-    // Destroy old charts
+// --- CHANGE 4: Render score LINE chart ---
+function renderScoreLineChart(labels, scores, type = 'line') {
     if (scoreChart) { scoreChart.destroy(); scoreChart = null; }
-    if (activityChart) { activityChart.destroy(); activityChart = null; }
 
-    // Score chart — bar chart for daily/weekly
     const scoreCtx = document.getElementById('score-chart').getContext('2d');
+    const pointColors = scores.map(s => {
+        if (s === null) return 'rgba(200,200,200,0.5)';
+        const pct = s / 175 * 100;
+        return pct >= 70 ? '#27ae60' : pct >= 50 ? '#f39c12' : '#e74c3c';
+    });
+
     scoreChart = new Chart(scoreCtx, {
-        type: 'bar',
+        type: 'line',
         data: {
-            labels: labels,
+            labels,
             datasets: [{
-                label: 'Total Score',
+                label: 'Score',
                 data: scores,
-                backgroundColor: scores.map(s => {
-                    const max = labels.length > 4 ? 175 : 1225;
-                    const pct = s / max * 100;
-                    return pct >= 70 ? 'rgba(39,174,96,0.75)' : pct >= 50 ? 'rgba(243,156,18,0.75)' : 'rgba(231,76,60,0.75)';
-                }),
-                borderRadius: 6,
-                borderSkipped: false,
+                borderColor: '#3498db',
+                backgroundColor: 'rgba(52,152,219,0.08)',
+                borderWidth: 2.5,
+                pointBackgroundColor: pointColors,
+                pointRadius: 5,
+                pointHoverRadius: 7,
+                tension: 0.35,
+                fill: true,
+                spanGaps: false,
             }]
         },
         options: {
@@ -806,33 +1024,51 @@ function renderActivityBarChart(activityTotals, labels, scores) {
                 legend: { display: false },
                 tooltip: {
                     callbacks: {
-                        label: ctx => `Score: ${ctx.parsed.y}`
+                        label: ctx => ctx.parsed.y !== null ? `Score: ${ctx.parsed.y}` : 'No entry'
                     }
                 }
             },
-            scales: { y: { beginAtZero: true } }
+            scales: {
+                y: {
+                    beginAtZero: false,
+                    grid: { color: 'rgba(0,0,0,0.06)' }
+                },
+                x: { grid: { display: false } }
+            }
         }
     });
+}
 
-    // Activity breakdown — horizontal bar
-    if (!activityTotals) {
-        document.getElementById('activity-chart-section').style.display = 'none';
-        return;
-    }
-    document.getElementById('activity-chart-section').style.display = 'block';
+// Activity filter update (called by checkboxes)
+window.updateActivityFilter = () => {
+    if (_currentActivityTotals) renderActivityBarChart(_currentActivityTotals);
+};
 
-    const actLabels = Object.keys(activityTotals);
-    const actValues = Object.values(activityTotals);
-    const actColors = actValues.map(v => v >= 50 ? '#27ae60' : v >= 20 ? '#f39c12' : '#e74c3c');
+// --- Render horizontal bar chart (activity breakdown) with filter ---
+function renderActivityBarChart(activityTotals) {
+    if (activityChart) { activityChart.destroy(); activityChart = null; }
+
+    const actSection = document.getElementById('activity-chart-section');
+    if (!activityTotals) { if (actSection) actSection.style.display = 'none'; return; }
+    if (actSection) actSection.style.display = 'block';
+
+    // Apply filters
+    const checkboxes = document.querySelectorAll('#activity-filters input[type=checkbox]');
+    const enabledActivities = new Set();
+    checkboxes.forEach(cb => { if (cb.checked) enabledActivities.add(cb.dataset.activity); });
+
+    const filteredKeys = Object.keys(activityTotals).filter(k => enabledActivities.has(k));
+    const filteredVals = filteredKeys.map(k => activityTotals[k]);
+    const actColors = filteredVals.map(v => v >= 50 ? '#27ae60' : v >= 0 ? '#f39c12' : '#e74c3c');
 
     const actCtx = document.getElementById('activity-chart').getContext('2d');
     activityChart = new Chart(actCtx, {
         type: 'bar',
         data: {
-            labels: actLabels,
+            labels: filteredKeys,
             datasets: [{
-                label: 'Total pts this week',
-                data: actValues,
+                label: 'Total pts',
+                data: filteredVals,
                 backgroundColor: actColors,
                 borderRadius: 5,
                 borderSkipped: false,
@@ -843,18 +1079,14 @@ function renderActivityBarChart(activityTotals, labels, scores) {
             responsive: true,
             plugins: {
                 legend: { display: false },
-                tooltip: {
-                    callbacks: {
-                        label: ctx => ` ${ctx.parsed.x} pts`
-                    }
-                }
+                tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.x} pts` } }
             },
             scales: {
                 x: {
                     beginAtZero: true,
-                    min: -15,
-                    max: 175,
-                    grid: { color: 'rgba(0,0,0,0.06)' }
+                    min: -175,
+                    grid: { color: 'rgba(0,0,0,0.06)' },
+                    ticks: { callback: v => v + ' pts' }
                 },
                 y: { grid: { display: false } }
             }
