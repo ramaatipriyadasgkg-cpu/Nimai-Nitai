@@ -1,11 +1,11 @@
 // --- 1. FIREBASE SETUP ---
 const firebaseConfig = {
-    apiKey: "AIzaSyCZdmZJckSWJo1tFT14NVKVurUGsoKrRy8",
-    authDomain: "rapd--sadhana-tracker.firebaseapp.com",
-    projectId: "rapd--sadhana-tracker",
-    storageBucket: "rapd--sadhana-tracker.firebasestorage.app",
-    messagingSenderId: "811405448950",
-    appId: "1:811405448950:web:8b711f3129e4bdf06dbed7"
+    apiKey: "AIzaSyDMXB0mD3fZPpCQti9Ikt-MdBjzmfBNfJs",
+    authDomain: "nimai-nitai.firebaseapp.com",
+    projectId: "nimai-nitai",
+    storageBucket: "nimai-nitai.firebasestorage.app",
+    messagingSenderId: "221744100000",
+    appId: "1:221744100000:web:24830d9a7d9a5cb4d3cfc5"
 };
 
 if (!firebase.apps.length) {
@@ -1887,14 +1887,23 @@ if (loginForm) {
             }
             await auth.signInWithEmailAndPassword(email, password);
         } catch (err) {
+            console.error('Login error:', err.code, err.message);
             let errorMsg = 'Login failed: ';
             switch (err.code) {
-                case 'auth/invalid-email': errorMsg += 'Invalid email address'; break;
-                case 'auth/user-disabled': errorMsg += 'This account has been disabled'; break;
-                case 'auth/user-not-found': errorMsg += 'No account found with this email'; break;
-                case 'auth/wrong-password': errorMsg += 'Incorrect password'; break;
-                case 'auth/invalid-credential': errorMsg += 'Invalid email or password'; break;
-                default: errorMsg += err.message;
+                case 'auth/invalid-email':        errorMsg += 'Invalid email address.'; break;
+                case 'auth/user-disabled':        errorMsg += 'This account has been disabled.'; break;
+                case 'auth/user-not-found':       errorMsg += 'No account found with this email.'; break;
+                case 'auth/wrong-password':       errorMsg += 'Incorrect password.'; break;
+                case 'auth/invalid-credential':   errorMsg += 'Invalid email or password.'; break;
+                case 'auth/operation-not-allowed':
+                    errorMsg += 'Email/Password login is not enabled in Firebase.\n\nGo to: Firebase Console → Authentication → Sign-in method → Enable Email/Password.';
+                    break;
+                case 'auth/network-request-failed':
+                    errorMsg += 'Network error. Check your internet connection.'; break;
+                case 'auth/too-many-requests':
+                    errorMsg += 'Too many failed attempts. Try again later.'; break;
+                default:
+                    errorMsg += err.message + '\n\nError code: ' + err.code;
             }
             alert(errorMsg);
         }
