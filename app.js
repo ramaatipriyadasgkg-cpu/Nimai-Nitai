@@ -1,11 +1,11 @@
 // --- 1. FIREBASE SETUP ---
 const firebaseConfig = {
-    apiKey: "AIzaSyDMXB0mD3fZPpCQti9Ikt-MdBjzmfBNfJs",
-    authDomain: "nimai-nitai.firebaseapp.com",
-    projectId: "nimai-nitai",
-    storageBucket: "nimai-nitai.firebasestorage.app",
-    messagingSenderId: "221744100000",
-    appId: "1:221744100000:web:24830d9a7d9a5cb4d3cfc5"
+    apiKey: "AIzaSyCZdmZJckSWJo1tFT14NVKVurUGsoKrRy8",
+    authDomain: "rapd--sadhana-tracker.firebaseapp.com",
+    projectId: "rapd--sadhana-tracker",
+    storageBucket: "rapd--sadhana-tracker.firebasestorage.app",
+    messagingSenderId: "811405448950",
+    appId: "1:811405448950:web:8b711f3129e4bdf06dbed7"
 };
 
 if (!firebase.apps.length) {
@@ -561,9 +561,8 @@ async function loadReports(userId, containerId) {
     for (let w = 0; w < 4; w++) {
         const sun = new Date(thisWeekSun);
         sun.setDate(thisWeekSun.getDate() - w * 7);
-        const sunStr = sun.toISOString().split('T')[0];
+        const sunStr = toLocalDateStr(sun);
         last4Suns.add(sunStr);
-        // Ensure these weeks exist in weeksData even if empty
         if (!weeksData[sunStr]) {
             const sat = new Date(sun); sat.setDate(sun.getDate() + 6);
             const fmt = d => `${String(d.getDate()).padStart(2,'0')} ${d.toLocaleString('en-GB',{month:'short'})}`;
@@ -574,12 +573,8 @@ async function loadReports(userId, containerId) {
     // 4-week comparison (always runs with weeksData)
     generate4WeekComparison([], weeksData);
 
-    if (snap.empty && Object.keys(weeksData).every(k => Object.keys(weeksData[k].days).length === 0)) {
-        container.innerHTML = '<p style="text-align:center; color:#999; padding:40px;">No sadhana data yet. Start tracking!</p>';
-        return;
-    }
-
-    // All weeks to display: last 4 + older filled weeks, newest first
+    // Always show last 4 weeks in detailed reports, even if all NR
+    // Only show "no data" if we have zero weeks to show at all (impossible since we always add 4)
     const allSuns = new Set([...last4Suns, ...Object.keys(weeksData)]);
     const sortedWeeks = Array.from(allSuns).sort((a, b) => b.localeCompare(a));
 
@@ -594,8 +589,8 @@ async function loadReports(userId, containerId) {
         let tableRows = '';
         for (let i = 0; i < 7; i++) {
             const currentDate = new Date(weekStart);
-            currentDate.setDate(currentDate.getDate() + i);
-            const dateStr = currentDate.toISOString().split('T')[0];
+            currentDate.setDate(weekStart.getDate() + i);
+            const dateStr = toLocalDateStr(currentDate);
             const entry = week.days[dateStr] || getNRData(dateStr);
             const isNR = !week.days[dateStr];
 
@@ -868,10 +863,10 @@ async function generateDailyCharts() {
     for (let i = 27; i >= 0; i--) {
         const d = new Date(today);
         d.setDate(today.getDate() - i);
-        dates.push(d.toISOString().split('T')[0]);
+        dates.push(toLocalDateStr(d));  // IST-safe local date
     }
 
-    // Firestore v8 'in' limit is 10 — use date range query instead
+    // Use date range query — works for any number of dates
     const snapshot = await db.collection('users').doc(currentUser.uid)
         .collection('sadhana')
         .where(firebase.firestore.FieldPath.documentId(), '>=', dates[0])
@@ -1058,6 +1053,15 @@ function renderScoreLineChart(labels, scores) {
     if (actSection) actSection.style.display = 'block';
 
     const scoreCtx = document.getElementById('score-chart').getContext('2d');
+
+    // Determine if we have any real data
+    const realScores = scores.filter(s => s !== null);
+    const hasData = realScores.length > 0;
+
+    // Y-axis range: always show full meaningful range regardless of data
+    const yMin = hasData ? Math.min(-40, Math.min(...realScores) - 10) : -40;
+    const yMax = hasData ? Math.max(175, Math.max(...realScores) + 10) : 175;
+
     const pointColors = scores.map(s => {
         if (s === null) return 'rgba(200,200,200,0.5)';
         const pct = s / 175 * 100;
@@ -1094,13 +1098,32 @@ function renderScoreLineChart(labels, scores) {
             },
             scales: {
                 y: {
-                    beginAtZero: false,
-                    grid: { color: 'rgba(0,0,0,0.06)' }
+                    min: yMin,
+                    max: yMax,
+                    grid: { color: 'rgba(0,0,0,0.06)' },
+                    ticks: {
+                        callback: v => v
+                    }
                 },
                 x: { grid: { display: false } }
             }
         }
     });
+
+    // If no data, show a message overlay
+    if (!hasData) {
+        const canvas = document.getElementById('score-chart');
+        const ctx2 = canvas.getContext('2d');
+        // Draw after chart renders
+        setTimeout(() => {
+            ctx2.save();
+            ctx2.fillStyle = 'rgba(150,150,150,0.7)';
+            ctx2.font = '14px Segoe UI';
+            ctx2.textAlign = 'center';
+            ctx2.fillText('No data yet — submit your first Sadhana entry!', canvas.width / 2, canvas.height / 2);
+            ctx2.restore();
+        }, 100);
+    }
 }
 
 // Activity filter update (called by checkboxes)
