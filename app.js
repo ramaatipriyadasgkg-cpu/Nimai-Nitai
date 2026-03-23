@@ -1944,6 +1944,105 @@ window.togglePw = (inputId, btn) => {
     }
 };
 
+// --- CAPS LOCK DETECTION ---
+window.checkCapsLock = (e, warningId) => {
+    const warning = document.getElementById(warningId);
+    if (!warning) return;
+    // getModifierState works on keydown/keyup
+    if (e.getModifierState) {
+        const caps = e.getModifierState('CapsLock');
+        warning.classList.toggle('show', caps);
+    }
+};
+
+// --- FORGOT PASSWORD ---
+window.showForgotPassword = () => {
+    // Pre-fill email if already typed
+    const emailVal = document.getElementById('login-email')?.value || '';
+
+    // Remove existing modal if any
+    const existing = document.getElementById('forgot-pw-modal');
+    if (existing) existing.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'forgot-pw-modal';
+    modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+    modal.innerHTML = `
+        <div style="background:white;border-radius:14px;max-width:400px;width:100%;padding:28px;box-shadow:0 10px 40px rgba(0,0,0,0.25);">
+            <div style="text-align:center;margin-bottom:18px;">
+                <div style="font-size:36px;">🔑</div>
+                <h3 style="margin:6px 0 4px;color:#2c3e50;">Reset Password</h3>
+                <p style="font-size:13px;color:#888;margin:0;">Enter your email and we'll send a reset link</p>
+            </div>
+            <input type="email" id="forgot-email" placeholder="Your email address"
+                value="${emailVal}"
+                style="width:100%;padding:12px;border:1px solid #ddd;border-radius:8px;box-sizing:border-box;font-size:14px;margin-bottom:4px;">
+            <div id="forgot-msg" style="display:none;padding:10px 14px;border-radius:8px;font-size:13px;font-weight:600;margin-bottom:10px;"></div>
+            <button onclick="sendResetEmail()" id="forgot-send-btn"
+                style="width:100%;padding:12px;background:#3498db;color:white;border:none;border-radius:8px;font-weight:700;font-size:14px;cursor:pointer;margin-bottom:8px;">
+                📧 Send Reset Link
+            </button>
+            <button onclick="document.getElementById('forgot-pw-modal').remove()"
+                style="width:100%;padding:10px;background:#f8f9fa;color:#666;border:1px solid #ddd;border-radius:8px;font-weight:600;font-size:13px;cursor:pointer;">
+                Cancel
+            </button>
+        </div>`;
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+    document.body.appendChild(modal);
+    // Focus email field
+    setTimeout(() => document.getElementById('forgot-email')?.focus(), 100);
+};
+
+window.sendResetEmail = async () => {
+    const emailInput = document.getElementById('forgot-email');
+    const msgEl = document.getElementById('forgot-msg');
+    const sendBtn = document.getElementById('forgot-send-btn');
+    const email = emailInput?.value?.trim();
+
+    if (!email) {
+        msgEl.style.display = 'block';
+        msgEl.style.background = '#ffebee';
+        msgEl.style.color = '#e74c3c';
+        msgEl.textContent = 'Please enter your email address.';
+        return;
+    }
+
+    sendBtn.disabled = true;
+    sendBtn.textContent = 'Sending…';
+    msgEl.style.display = 'none';
+
+    try {
+        await auth.sendPasswordResetEmail(email);
+        msgEl.style.display = 'block';
+        msgEl.style.background = '#e8f5e9';
+        msgEl.style.color = '#27ae60';
+        msgEl.innerHTML = '✅ Reset link sent! Check your inbox (and spam folder).';
+        sendBtn.textContent = '✅ Email Sent';
+        sendBtn.style.background = '#27ae60';
+        // Auto close after 3 seconds
+        setTimeout(() => {
+            const modal = document.getElementById('forgot-pw-modal');
+            if (modal) modal.remove();
+        }, 3000);
+    } catch (err) {
+        sendBtn.disabled = false;
+        sendBtn.textContent = '📧 Send Reset Link';
+        msgEl.style.display = 'block';
+        msgEl.style.background = '#ffebee';
+        msgEl.style.color = '#e74c3c';
+        switch (err.code) {
+            case 'auth/user-not-found':
+                msgEl.textContent = 'No account found with this email.'; break;
+            case 'auth/invalid-email':
+                msgEl.textContent = 'Invalid email address.'; break;
+            case 'auth/too-many-requests':
+                msgEl.textContent = 'Too many requests. Please wait a moment.'; break;
+            default:
+                msgEl.textContent = err.message;
+        }
+    }
+};
+
 // --- CHANGE PASSWORD FORM ---
 const changePasswordForm = document.getElementById('change-password-form');
 if (changePasswordForm) {
