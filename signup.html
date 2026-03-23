@@ -292,6 +292,80 @@
         </section>
     </div>
 
+<<<<<<< HEAD
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyDMXB0mD3fZPpCQti9Ikt-MdBjzmfBNfJs",
+            authDomain: "nimai-nitai.firebaseapp.com",
+            projectId: "nimai-nitai",
+            storageBucket: "nimai-nitai.firebasestorage.app",
+            messagingSenderId: "221744100000",
+            appId: "1:221744100000:web:24830d9a7d9a5cb4d3cfc5"
+        };
+        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth(), db = firebase.firestore();
+
+        document.getElementById('signup-form').onsubmit = async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('signup-btn');
+            const name = document.getElementById('signup-name').value.trim();
+            const email = document.getElementById('signup-email').value.trim();
+            const password = document.getElementById('signup-password').value;
+
+            btn.disabled = true;
+            btn.textContent = 'Creating Account...';
+
+            const msg = document.getElementById('signup-msg');
+            try {
+                // Step 1: Create auth account
+                const cred = await auth.createUserWithEmailAndPassword(email, password);
+
+                // Step 2: Save profile to Firestore (may fail if rules not set)
+                try {
+                    await db.collection('users').doc(cred.user.uid).set({
+                        name: name,
+                        role: 'user',
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                } catch (firestoreErr) {
+                    console.warn('Firestore write failed (account still created):', firestoreErr);
+                    // Account exists — login page will ask for name via profile section
+                }
+
+                document.getElementById('signup-form').style.display = 'none';
+                msg.style.display = 'block';
+                msg.style.background = '#e8f5e9';
+                msg.style.color = '#27ae60';
+                msg.innerHTML = 'Account created successfully! Redirecting...';
+                setTimeout(() => { window.location.href = 'index.html'; }, 2000);
+            } catch (err) {
+                console.error('Signup error:', err);
+                msg.style.display = 'block';
+                msg.style.background = '#ffebee';
+                msg.style.color = '#e74c3c';
+
+                let errorMsg = 'Signup failed: ';
+                switch(err.code) {
+                    case 'auth/email-already-in-use':
+                        errorMsg += 'This email is already registered. Try logging in instead.';
+                        break;
+                    case 'auth/invalid-email':
+                        errorMsg += 'Invalid email address.';
+                        break;
+                    case 'auth/weak-password':
+                        errorMsg += 'Password must be at least 6 characters.';
+                        break;
+                    default:
+                        errorMsg += err.message;
+                }
+                msg.textContent = errorMsg;
+                btn.disabled = false;
+                btn.textContent = 'Sign Up';
+            }
+        };
+    </script>
+=======
     <script src="app.js"></script>
+>>>>>>> 16328935c7ec1d1fde5f03d27cc51f13422985ee
 </body>
 </html>
