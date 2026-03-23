@@ -1,11 +1,11 @@
 // --- 1. FIREBASE SETUP ---
 const firebaseConfig = {
-    apiKey: "AIzaSyCZdmZJckSWJo1tFT14NVKVurUGsoKrRy8",
-    authDomain: "rapd--sadhana-tracker.firebaseapp.com",
-    projectId: "rapd--sadhana-tracker",
-    storageBucket: "rapd--sadhana-tracker.firebasestorage.app",
-    messagingSenderId: "811405448950",
-    appId: "1:811405448950:web:8b711f3129e4bdf06dbed7"
+    apiKey: "AIzaSyDMXB0mD3fZPpCQti9Ikt-MdBjzmfBNfJs",
+    authDomain: "nimai-nitai.firebaseapp.com",
+    projectId: "nimai-nitai",
+    storageBucket: "nimai-nitai.firebasestorage.app",
+    messagingSenderId: "221744100000",
+    appId: "1:221744100000:web:24830d9a7d9a5cb4d3cfc5"
 };
 
 if (!firebase.apps.length) {
@@ -20,6 +20,16 @@ let scoreChart = null, activityChart = null;
 let editingDate = null;
 
 // --- 2. HELPERS ---
+// Local date helpers — avoids toISOString() UTC bug (wrong date for IST users between midnight-5:30AM)
+function toLocalDateStr(date) {
+    const d = date || new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function parseLocalDate(dateStr) {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    return new Date(y, m - 1, d);
+}
+
 const t2m = (t, isSleep = false) => {
     if (!t || t === "NR") return 9999;
     let [h, m] = t.split(':').map(Number);
@@ -28,7 +38,7 @@ const t2m = (t, isSleep = false) => {
 };
 
 function getWeekInfo(dateStr) {
-    const d = new Date(dateStr);
+    const d = parseLocalDate(dateStr);
     const sun = new Date(d); sun.setDate(d.getDate() - d.getDay());
     const sat = new Date(sun); sat.setDate(sun.getDate() + 6);
     const fmt = (date) => {
@@ -36,7 +46,7 @@ function getWeekInfo(dateStr) {
         const month = date.toLocaleString('en-GB', { month: 'short' });
         return `${day} ${month}`;
     };
-    return { sunStr: sun.toISOString().split('T')[0], label: `${fmt(sun)} to ${fmt(sat)}_${sun.getFullYear()}` };
+    return { sunStr: toLocalDateStr(sun), label: `${fmt(sun)} to ${fmt(sat)}_${sun.getFullYear()}` };
 }
 
 function getNRData(date) {
@@ -44,7 +54,7 @@ function getNRData(date) {
         id: date, totalScore: -40, dayPercent: -23,
         sleepTime: "NR", wakeupTime: "NR", morningProgramTime: "NR", chantingTime: "NR",
         readingMinutes: "NR", hearingMinutes: "NR", notesMinutes: "NR", daySleepMinutes: "NR",
-        scores: { sleep: -5, wakeup: -5, morningProgram: -5, chanting: -5, reading: -5, hearing: -5, notes: -5, daySleep: 0 }
+        scores: { sleep: -5, wakeup: -5, morningProgram: -5, chanting: -5, reading: -5, hearing: -5, notes: -5, daySleep: -5 }
     };
 }
 
@@ -77,17 +87,44 @@ window.downloadUserExcel = async (userId, userName) => {
         sortedWeeks.forEach((sunStr, weekIndex) => {
             const week = weeksData[sunStr];
             dataArray.push([`WEEK: ${week.label}`, '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']);
+<<<<<<< HEAD
+            
+            // Column Headers
+            dataArray.push([
+                'Day', 'To Bed', 'Mks', 'Wake Up', 'Mks', 'Japa', 'Mks',
+                'MP', 'Mks', 'DS', 'Mks', 'Pathan', 'Mks',
+                'Sarwan', 'Mks', 'Ntes Rev.', 'Mks', 'Day Wise'
+            ]);
+
+            // Daily rows (Sun to Sat)
+            let weekTotals = {
+                sleepM: 0, wakeupM: 0, morningProgramM: 0, chantingM: 0,
+                readingM: 0, hearingM: 0, notesM: 0, daySleepM: 0,
+                readingMins: 0, hearingMins: 0, notesMins: 0, daySleepMins: 0,
+                total: 0
+            };
+
+            const weekStart = parseLocalDate(week.sunStr);
+=======
             dataArray.push(['Day', '1.To Bed', 'Mks', '2. Wake Up', 'Mks', '3. Japa', 'Mks', '4. MP', 'Mks', '5. DS', 'Mks', '6. Pathan', 'Mks', '7. Sarwan', 'Mks', '8. Ntes Rev.', 'Mks', 'Day Wise']);
 
             let weekTotals = { sleepM: 0, wakeupM: 0, morningProgramM: 0, chantingM: 0, readingM: 0, hearingM: 0, notesM: 0, daySleepM: 0, readingMins: 0, hearingMins: 0, notesMins: 0, daySleepMins: 0, total: 0 };
             const weekStart = new Date(week.sunStr);
+>>>>>>> 16328935c7ec1d1fde5f03d27cc51f13422985ee
             const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
             for (let i = 0; i < 7; i++) {
                 const currentDate = new Date(weekStart);
                 currentDate.setDate(currentDate.getDate() + i);
+<<<<<<< HEAD
+                const dateStr = toLocalDateStr(currentDate);
+                const dayNum = currentDate.getDate();
+                const dayLabel = `${dayNames[i]} ${String(dayNum).padStart(2, '0')}`;
+
+=======
                 const dateStr = currentDate.toISOString().split('T')[0];
                 const dayLabel = `${dayNames[i]} ${String(currentDate.getDate()).padStart(2, '0')}`;
+>>>>>>> 16328935c7ec1d1fde5f03d27cc51f13422985ee
                 const entry = week.days[dateStr] || getNRData(dateStr);
 
                 const readMins = entry.readingMinutes === 'NR' ? 0 : (entry.readingMinutes || 0);
@@ -123,7 +160,57 @@ window.downloadUserExcel = async (userId, userName) => {
             let adjustedNotesM = weekTotals.notesM;
             if (weekTotals.notesMins >= 245) adjustedNotesM = 175;
             const adjustedTotal = weekTotals.total - weekTotals.notesM + adjustedNotesM;
+<<<<<<< HEAD
+
+            // Weekly Total Row with fair denominator
+            const elapsedDays = getElapsedDays(week.sunStr);
+            const fairDenom = elapsedDays * 175;
+            const weekPercent = fairDenom > 0 ? Math.round((adjustedTotal / fairDenom) * 100) : 0;
+            dataArray.push([
+                `Total/${fairDenom}`,
+                '',
+                weekTotals.sleepM,
+                '',
+                weekTotals.wakeupM,
+                '',
+                weekTotals.chantingM,
+                '',
+                weekTotals.morningProgramM,
+                '',
+                weekTotals.daySleepM,
+                weekTotals.readingMins,
+                weekTotals.readingM,
+                weekTotals.hearingMins,
+                weekTotals.hearingM,
+                weekTotals.notesMins,
+                adjustedNotesM,
+                ''
+            ]);
+            
+            // Sadhna % Row (using fair denominator)
+            dataArray.push([
+                'Sadhna %',
+                '',
+                elapsedDays > 0 ? Math.round((weekTotals.sleepM/(elapsedDays*25))*100) + '%' : '0%',
+                '',
+                elapsedDays > 0 ? Math.round((weekTotals.wakeupM/(elapsedDays*25))*100) + '%' : '0%',
+                '',
+                elapsedDays > 0 ? Math.round((weekTotals.chantingM/(elapsedDays*25))*100) + '%' : '0%',
+                '',
+                elapsedDays > 0 ? Math.round((weekTotals.morningProgramM/(elapsedDays*25))*100) + '%' : '0%',
+                '',
+                elapsedDays > 0 ? Math.round((weekTotals.daySleepM/(elapsedDays*10))*100) + '%' : '0%',
+                '',
+                elapsedDays > 0 ? Math.round((weekTotals.readingM/(elapsedDays*25))*100) + '%' : '0%',
+                '',
+                elapsedDays > 0 ? Math.round((weekTotals.hearingM/(elapsedDays*25))*100) + '%' : '0%',
+                '',
+                elapsedDays > 0 ? Math.round((adjustedNotesM/(elapsedDays*25))*100) + '%' : '0%',
+                ''
+            ]);
+=======
             const weekPercent = Math.round((adjustedTotal / 1225) * 100);
+>>>>>>> 16328935c7ec1d1fde5f03d27cc51f13422985ee
 
             dataArray.push(['Total/1225', '', weekTotals.sleepM, '', weekTotals.wakeupM, '', weekTotals.chantingM, '', weekTotals.morningProgramM, '', weekTotals.daySleepM, weekTotals.readingMins, weekTotals.readingM, weekTotals.hearingMins, weekTotals.hearingM, weekTotals.notesMins, adjustedNotesM, '']);
             dataArray.push(['Sadhna %', '', Math.round((weekTotals.sleepM/175)*100)+'%', '', Math.round((weekTotals.wakeupM/175)*100)+'%', '', Math.round((weekTotals.chantingM/175)*100)+'%', '', Math.round((weekTotals.morningProgramM/175)*100)+'%', '', Math.round((weekTotals.daySleepM/70)*100)+'%', '', Math.round((weekTotals.readingM/175)*100)+'%', '', Math.round((weekTotals.hearingM/175)*100)+'%', '', Math.round((adjustedNotesM/175)*100)+'%', '']);
@@ -180,6 +267,27 @@ auth.onAuthStateChanged(async (user) => {
     console.log('Auth state changed:', user ? 'LOGGED IN uid=' + user.uid : 'LOGGED OUT');
     if (user) {
         currentUser = user;
+<<<<<<< HEAD
+        try {
+            const userDoc = await db.collection('users').doc(user.uid).get();
+
+            if (!userDoc.exists || !userDoc.data().name) {
+                showSection('profile');
+                document.getElementById('profile-title').textContent = 'Set Your Name';
+            } else {
+                userProfile = userDoc.data();
+                showSection('dashboard');
+                document.getElementById('user-display-name').textContent = userProfile.name;
+                setupDateSelect();
+                loadReports(currentUser.uid, 'weekly-reports-container');
+            }
+        } catch (error) {
+            console.error('Firestore read failed:', error);
+            // Firestore may not be set up or rules blocking — still show profile form
+            // so user can try to create their profile
+            showSection('profile');
+            document.getElementById('profile-title').textContent = 'Set Your Name';
+=======
         const userDoc = await db.collection('users').doc(user.uid).get();
         if (!userDoc.exists || !userDoc.data().name) {
             showSection('profile');
@@ -193,12 +301,17 @@ auth.onAuthStateChanged(async (user) => {
             document.getElementById('user-display-name').textContent = userProfile.name;
             setupDateSelect();
             loadReports(currentUser.uid, 'weekly-reports-container');
+>>>>>>> 16328935c7ec1d1fde5f03d27cc51f13422985ee
         }
     } else {
         showSection('auth');
         currentUser = null;
         userProfile = null;
     }
+}, (error) => {
+    console.error('Auth listener error:', error);
+    auth.signOut();
+    showSection('auth');
 });
 
 // --- 6. SCORING ENGINE ---
@@ -267,6 +380,62 @@ function computeScores(slp, wak, mpTime, mpNotDone, chn, rMin, hMin, nMin, dsMin
     else if (nMin >= 10) sc.notes = 5;
     else if (nMin >= 5) sc.notes = 0;
     else sc.notes = -5;
+<<<<<<< HEAD
+    
+    const total = sc.sleep + sc.wakeup + sc.morningProgram + sc.chanting + 
+                  sc.reading + sc.hearing + sc.notes + sc.daySleep;
+    const dayPercent = Math.round((total / 175) * 100);
+    
+    try {
+        const docRef = db.collection('users').doc(currentUser.uid).collection('sadhana').doc(date);
+        const existingDoc = await docRef.get();
+
+        const newData = {
+            sleepTime: slp,
+            wakeupTime: wak,
+            morningProgramTime: mpTime,
+            chantingTime: chn,
+            readingMinutes: rMin,
+            hearingMinutes: hMin,
+            notesMinutes: nMin,
+            daySleepMinutes: dsMin,
+            scores: sc,
+            totalScore: total,
+            dayPercent: dayPercent,
+            submittedAt: firebase.firestore.FieldValue.serverTimestamp()
+        };
+
+        if (existingDoc.exists) {
+            const oldData = existingDoc.data();
+            const editHistory = oldData.editHistory || [];
+            editHistory.push({
+                editedAt: new Date().toISOString(),
+                editedBy: userProfile?.name || currentUser.uid,
+                before: {
+                    sleepTime: oldData.sleepTime, wakeupTime: oldData.wakeupTime,
+                    morningProgramTime: oldData.morningProgramTime, chantingTime: oldData.chantingTime,
+                    readingMinutes: oldData.readingMinutes, hearingMinutes: oldData.hearingMinutes,
+                    notesMinutes: oldData.notesMinutes, daySleepMinutes: oldData.daySleepMinutes,
+                    scores: oldData.scores, totalScore: oldData.totalScore
+                },
+                after: {
+                    sleepTime: slp, wakeupTime: wak,
+                    morningProgramTime: mpTime, chantingTime: chn,
+                    readingMinutes: rMin, hearingMinutes: hMin,
+                    notesMinutes: nMin, daySleepMinutes: dsMin,
+                    scores: sc, totalScore: total
+                }
+            });
+            newData.editHistory = editHistory;
+        }
+
+        await docRef.set(newData);
+
+        alert(`Success! Score: ${total}/175 (${dayPercent}%)`);
+        switchTab('reports');
+    } catch (error) {
+        alert('Error saving: ' + error.message);
+=======
 
     return sc;
 }
@@ -284,6 +453,7 @@ window.toggleMorningProgram = (notDone) => {
         timeRow.style.display = 'block';
         mpDoneBtn.classList.add('mp-active');
         mpNoBtn.classList.remove('mp-active');
+>>>>>>> 16328935c7ec1d1fde5f03d27cc51f13422985ee
     }
 };
 
@@ -542,15 +712,51 @@ async function loadReports(userId, containerId) {
     const container = document.getElementById(containerId);
     const snap = await db.collection('users').doc(userId).collection('sadhana').get();
 
+<<<<<<< HEAD
+    // Organize data by weeks
+=======
+>>>>>>> 16328935c7ec1d1fde5f03d27cc51f13422985ee
     const weeksData = {};
     snap.forEach(doc => {
         const weekInfo = getWeekInfo(doc.id);
         if (!weeksData[weekInfo.sunStr]) {
+<<<<<<< HEAD
+            weeksData[weekInfo.sunStr] = {
+                label: weekInfo.label,
+                sunStr: weekInfo.sunStr,
+                days: {}
+            };
+=======
             weeksData[weekInfo.sunStr] = { label: weekInfo.label, sunStr: weekInfo.sunStr, days: {} };
+>>>>>>> 16328935c7ec1d1fde5f03d27cc51f13422985ee
         }
         weeksData[weekInfo.sunStr].days[doc.id] = doc.data();
     });
 
+<<<<<<< HEAD
+    // Ensure last 4 weeks always exist (even with no data)
+    const today = new Date();
+    for (let w = 0; w < 4; w++) {
+        const d = new Date(today);
+        d.setDate(today.getDate() - (today.getDay() + w * 7));
+        const sunStr = toLocalDateStr(d);
+        if (!weeksData[sunStr]) {
+            const weekInfo = getWeekInfo(sunStr);
+            weeksData[sunStr] = { label: weekInfo.label, sunStr: weekInfo.sunStr, days: {} };
+        }
+    }
+
+    const sortedWeeks = Object.keys(weeksData).sort((a, b) => b.localeCompare(a));
+
+    // Generate 4-week comparison table
+    generate4WeekComparison(sortedWeeks.slice(0, 4), weeksData);
+    
+    // Generate detailed weekly reports with tables
+    let html = '';
+    sortedWeeks.forEach(sunStr => {
+        const week = weeksData[sunStr];
+        const weekStart = parseLocalDate(week.sunStr);
+=======
     // Always show last 4 calendar weeks (NR for gaps)
     const today = new Date();
     const thisWeekSun = new Date(today);
@@ -587,6 +793,7 @@ async function loadReports(userId, containerId) {
     sortedWeeks.forEach(sunStr => {
         const week = weeksData[sunStr];
         const weekStart = new Date(sunStr);
+>>>>>>> 16328935c7ec1d1fde5f03d27cc51f13422985ee
         const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
         let weekTotals = { total: 0, readingMins: 0, hearingMins: 0, notesMins: 0, notesMarks: 0, sleepMarks: 0, wakeupMarks: 0, morningMarks: 0, chantingMarks: 0, readingMarks: 0, hearingMarks: 0, daySleepMarks: 0 };
@@ -595,7 +802,7 @@ async function loadReports(userId, containerId) {
         for (let i = 0; i < 7; i++) {
             const currentDate = new Date(weekStart);
             currentDate.setDate(currentDate.getDate() + i);
-            const dateStr = currentDate.toISOString().split('T')[0];
+            const dateStr = toLocalDateStr(currentDate);
             const entry = week.days[dateStr] || getNRData(dateStr);
             const isNR = !week.days[dateStr];
 
@@ -603,6 +810,28 @@ async function loadReports(userId, containerId) {
             weekTotals.readingMins += (entry.readingMinutes === 'NR' ? 0 : entry.readingMinutes) || 0;
             weekTotals.hearingMins += (entry.hearingMinutes === 'NR' ? 0 : entry.hearingMinutes) || 0;
             weekTotals.notesMins += (entry.notesMinutes === 'NR' ? 0 : entry.notesMinutes) || 0;
+<<<<<<< HEAD
+            weekTotals.notesMarks += entry.scores?.notes ?? 0;
+            weekTotals.sleepMarks += entry.scores?.sleep ?? 0;
+            weekTotals.wakeupMarks += entry.scores?.wakeup ?? 0;
+            weekTotals.morningMarks += entry.scores?.morningProgram ?? 0;
+            weekTotals.chantingMarks += entry.scores?.chanting ?? 0;
+            weekTotals.readingMarks += entry.scores?.reading ?? 0;
+            weekTotals.hearingMarks += entry.scores?.hearing ?? 0;
+            weekTotals.daySleepMarks += entry.scores?.daySleep ?? 0;
+            
+            const dayPercent = entry.dayPercent ?? -23;
+            const percentColor = dayPercent >= 80 ? 'green' : dayPercent >= 60 ? 'orange' : 'red';
+            
+            const editHistory = entry.editHistory || [];
+            const editBadge = editHistory.length > 0
+                ? ` <span onclick="event.stopPropagation(); this.parentElement.parentElement.nextElementSibling.style.display = this.parentElement.parentElement.nextElementSibling.style.display === 'none' ? 'table-row' : 'none';" style="cursor:pointer; background:#ff9800; color:white; border-radius:4px; padding:1px 5px; font-size:10px; font-weight:normal;" title="Edited ${editHistory.length} time(s)">Edited</span>`
+                : '';
+
+            tableRows += `
+                <tr>
+                    <td><strong>${dayNames[i]} ${currentDate.getDate()}</strong>${editBadge}</td>
+=======
             weekTotals.notesMarks += entry.scores?.notes || 0;
             weekTotals.sleepMarks += entry.scores?.sleep || 0;
             weekTotals.wakeupMarks += entry.scores?.wakeup || 0;
@@ -625,6 +854,7 @@ async function loadReports(userId, containerId) {
             tableRows += `
                 <tr>
                     <td><strong>${dayNames[i]} ${currentDate.getDate()}</strong><br>${editBtn}</td>
+>>>>>>> 16328935c7ec1d1fde5f03d27cc51f13422985ee
                     <td>${entry.sleepTime}</td>
                     <td style="background:${getScoreBackground(entry.scores?.sleep)};font-weight:bold;">${entry.scores?.sleep}</td>
                     <td>${entry.wakeupTime}</td>
@@ -644,11 +874,46 @@ async function loadReports(userId, containerId) {
                     <td style="color:${percentColor};font-weight:bold;">${dayPercent}%</td>
                 </tr>
             `;
+
+            // Edit history expandable row
+            if (editHistory.length > 0) {
+                let historyHTML = editHistory.map((eh, idx) => {
+                    const when = new Date(eh.editedAt).toLocaleString('en-GB', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
+                    const b = eh.before;
+                    const a = eh.after;
+                    const changes = [];
+                    if (b.sleepTime !== a.sleepTime) changes.push(`Sleep: ${b.sleepTime} -> ${a.sleepTime}`);
+                    if (b.wakeupTime !== a.wakeupTime) changes.push(`Wakeup: ${b.wakeupTime} -> ${a.wakeupTime}`);
+                    if (b.morningProgramTime !== a.morningProgramTime) changes.push(`MP: ${b.morningProgramTime} -> ${a.morningProgramTime}`);
+                    if (b.chantingTime !== a.chantingTime) changes.push(`Chanting: ${b.chantingTime} -> ${a.chantingTime}`);
+                    if (b.readingMinutes !== a.readingMinutes) changes.push(`Reading: ${b.readingMinutes} -> ${a.readingMinutes} mins`);
+                    if (b.hearingMinutes !== a.hearingMinutes) changes.push(`Hearing: ${b.hearingMinutes} -> ${a.hearingMinutes} mins`);
+                    if (b.notesMinutes !== a.notesMinutes) changes.push(`Notes: ${b.notesMinutes} -> ${a.notesMinutes} mins`);
+                    if (b.daySleepMinutes !== a.daySleepMinutes) changes.push(`Day Sleep: ${b.daySleepMinutes} -> ${a.daySleepMinutes} mins`);
+                    if (b.totalScore !== a.totalScore) changes.push(`Score: ${b.totalScore} -> ${a.totalScore}`);
+                    return `<div style="margin-bottom:4px;"><strong>Edit #${idx+1}</strong> by ${eh.editedBy} on ${when}<br/>${changes.length > 0 ? changes.join(', ') : 'No field changes'}</div>`;
+                }).join('');
+
+                tableRows += `
+                    <tr style="display:none; background:#fff8e1;">
+                        <td colspan="18" style="font-size:12px; padding:8px;">
+                            <strong>Edit History:</strong><br/>${historyHTML}
+                        </td>
+                    </tr>
+                `;
+            }
         }
 
         let adjustedNotesMarks = weekTotals.notesMarks;
         if (weekTotals.notesMins >= 245) adjustedNotesMarks = 175;
         const adjustedTotal = weekTotals.total - weekTotals.notesMarks + adjustedNotesMarks;
+<<<<<<< HEAD
+        const elapsedDays = getElapsedDays(week.sunStr);
+        const fairDenom = elapsedDays * 175;
+        const weekPercent = fairDenom > 0 ? Math.round((adjustedTotal / fairDenom) * 100) : 0;
+
+        const weekClass = adjustedTotal < (fairDenom * 0.6) ? 'low-score' : '';
+=======
         // Fair denominator: count only past days (not future days in current week)
         let elapsedDays = 0;
         for (let i = 0; i < 7; i++) {
@@ -659,25 +924,74 @@ async function loadReports(userId, containerId) {
         const weekPercent = Math.round((adjustedTotal / 1225) * 100);
         const fairPercent = fairMax > 0 ? Math.round((adjustedTotal / fairMax) * 100) : 0;
         const weekClass = adjustedTotal < 735 ? 'low-score' : '';
+>>>>>>> 16328935c7ec1d1fde5f03d27cc51f13422985ee
 
         html += `
             <div class="week-card ${weekClass}">
                 <div class="week-header" onclick="this.nextElementSibling.classList.toggle('expanded'); this.querySelector('.toggle-icon').textContent = this.nextElementSibling.classList.contains('expanded') ? '▼' : '▶';">
+<<<<<<< HEAD
+                    <span>${week.label}</span>
+                    <span>${adjustedTotal}/${fairDenom} (${weekPercent}%) <span class="toggle-icon">▶</span></span>
+=======
                     <span>${week.label.split('_')[0]}</span>
                     <span>${adjustedTotal}/${fairMax} &nbsp;|&nbsp; Fair: ${fairPercent}% &nbsp;|&nbsp; Overall: ${weekPercent}% <span class="toggle-icon">▶</span></span>
+>>>>>>> 16328935c7ec1d1fde5f03d27cc51f13422985ee
                 </div>
                 <div class="week-content">
                     <div style="overflow-x:auto;">
                     <table class="daily-table">
                         <thead>
+<<<<<<< HEAD
+                            <tr style="background: var(--secondary); color: black;">
+                                <th>Day</th>
+                                <th>To Bed</th>
+                                <th>Mks</th>
+                                <th>Wake Up</th>
+                                <th>Mks</th>
+                                <th>Japa</th>
+                                <th>Mks</th>
+                                <th>MP</th>
+                                <th>Mks</th>
+                                <th>DS</th>
+                                <th>Mks</th>
+                                <th>Pathan</th>
+                                <th>Mks</th>
+                                <th>Sarwan</th>
+                                <th>Mks</th>
+                                <th>Ntes Rev.</th>
+                                <th>Mks</th>
+                                <th>Day Wise</th>
+=======
                             <tr style="background:var(--secondary);color:black;">
                                 <th>Day</th><th>Bed Time</th><th>Mks</th><th>Wake Up</th><th>Mks</th>
                                 <th>Japa</th><th>Mks</th><th>Morn. Prog</th><th>Mks</th><th>Day Sleep</th><th>Mks</th>
                                 <th>Pathan</th><th>Mks</th><th>Sarwan</th><th>Mks</th><th>Notes Rev.</th><th>Mks</th><th>Day %</th>
+>>>>>>> 16328935c7ec1d1fde5f03d27cc51f13422985ee
                             </tr>
                         </thead>
                         <tbody>
                             ${tableRows}
+<<<<<<< HEAD
+                            <tr style="background: #f0f4ff; font-weight: bold;">
+                                <td>Total/${fairDenom}</td>
+                                <td>—</td>
+                                <td style="background: lightgreen;">${weekTotals.sleepMarks}</td>
+                                <td>—</td>
+                                <td style="background: lightgreen;">${weekTotals.wakeupMarks}</td>
+                                <td>—</td>
+                                <td style="background: lightgreen;">${weekTotals.chantingMarks}</td>
+                                <td>—</td>
+                                <td style="background: lightgreen;">${weekTotals.morningMarks}</td>
+                                <td>—</td>
+                                <td style="background: lightgreen;">${weekTotals.daySleepMarks}</td>
+                                <td>${weekTotals.readingMins}</td>
+                                <td style="background: lightgreen;">${weekTotals.readingMarks}</td>
+                                <td>${weekTotals.hearingMins}</td>
+                                <td style="background: lightgreen;">${weekTotals.hearingMarks}</td>
+                                <td>${weekTotals.notesMins}</td>
+                                <td style="background: lightgreen;">${adjustedNotesMarks}</td>
+                                <td>—</td>
+=======
                             <tr style="background:#f0f4ff;font-weight:bold;">
                                 <td>Total/1225</td><td>—</td>
                                 <td style="background:lightgreen;">${weekTotals.sleepMarks}</td><td>—</td>
@@ -688,9 +1002,20 @@ async function loadReports(userId, containerId) {
                                 <td>${weekTotals.readingMins}</td><td style="background:lightgreen;">${weekTotals.readingMarks}</td>
                                 <td>${weekTotals.hearingMins}</td><td style="background:lightgreen;">${weekTotals.hearingMarks}</td>
                                 <td>${weekTotals.notesMins}</td><td style="background:lightgreen;">${adjustedNotesMarks}</td><td>—</td>
+>>>>>>> 16328935c7ec1d1fde5f03d27cc51f13422985ee
                             </tr>
                             <tr style="background:#e8f5e9;font-weight:bold;">
                                 <td>Sadhna %</td>
+<<<<<<< HEAD
+                                <td colspan="2" style="background: lightgreen; font-size: 1.1em;">${elapsedDays > 0 ? Math.round((weekTotals.sleepMarks/(elapsedDays*25))*100) : 0}%</td>
+                                <td colspan="2" style="background: lightgreen; font-size: 1.1em;">${elapsedDays > 0 ? Math.round((weekTotals.wakeupMarks/(elapsedDays*25))*100) : 0}%</td>
+                                <td colspan="2" style="background: lightgreen; font-size: 1.1em;">${elapsedDays > 0 ? Math.round((weekTotals.chantingMarks/(elapsedDays*25))*100) : 0}%</td>
+                                <td colspan="2" style="background: lightgreen; font-size: 1.1em;">${elapsedDays > 0 ? Math.round((weekTotals.morningMarks/(elapsedDays*25))*100) : 0}%</td>
+                                <td colspan="2" style="background: lightgreen; font-size: 1.1em;">${elapsedDays > 0 ? Math.round((weekTotals.daySleepMarks/(elapsedDays*10))*100) : 0}%</td>
+                                <td colspan="2" style="background: lightgreen; font-size: 1.1em;">${elapsedDays > 0 ? Math.round((weekTotals.readingMarks/(elapsedDays*25))*100) : 0}%</td>
+                                <td colspan="2" style="background: lightgreen; font-size: 1.1em;">${elapsedDays > 0 ? Math.round((weekTotals.hearingMarks/(elapsedDays*25))*100) : 0}%</td>
+                                <td colspan="2" style="background: lightgreen; font-size: 1.1em;">${elapsedDays > 0 ? Math.round((adjustedNotesMarks/(elapsedDays*25))*100) : 0}%</td>
+=======
                                 <td colspan="2" style="background:lightgreen;font-size:1.1em;">${Math.round((weekTotals.sleepMarks/175)*100)}%</td>
                                 <td colspan="2" style="background:lightgreen;font-size:1.1em;">${Math.round((weekTotals.wakeupMarks/175)*100)}%</td>
                                 <td colspan="2" style="background:lightgreen;font-size:1.1em;">${Math.round((weekTotals.chantingMarks/175)*100)}%</td>
@@ -699,16 +1024,23 @@ async function loadReports(userId, containerId) {
                                 <td colspan="2" style="background:lightgreen;font-size:1.1em;">${Math.round((weekTotals.readingMarks/175)*100)}%</td>
                                 <td colspan="2" style="background:lightgreen;font-size:1.1em;">${Math.round((weekTotals.hearingMarks/175)*100)}%</td>
                                 <td colspan="2" style="background:lightgreen;font-size:1.1em;">${Math.round((adjustedNotesMarks/175)*100)}%</td>
+>>>>>>> 16328935c7ec1d1fde5f03d27cc51f13422985ee
                                 <td>—</td>
                             </tr>
                         </tbody>
                     </table>
+<<<<<<< HEAD
+                    
+                    <div style="margin-top: 15px; padding: 15px; background: var(--secondary); color: white; border-radius: 8px; text-align: center;">
+                        <strong style="font-size: 1.3em;">OVERALL: ${adjustedTotal}/${fairDenom} (${weekPercent}%)</strong>
+=======
                     </div>
                     <div style="margin-top:15px;padding:15px;background:var(--secondary);color:white;border-radius:8px;text-align:center;">
                         <strong style="font-size:1.2em;">OVERALL: ${adjustedTotal}/1225 (${weekPercent}%)</strong>
                         &nbsp;&nbsp;|&nbsp;&nbsp;
                         <strong style="font-size:1.2em;">Fair %: ${adjustedTotal}/${fairMax} (${fairPercent}%)</strong>
                         <div style="font-size:11px;opacity:0.85;margin-top:4px;">Fair % = score ÷ (${elapsedDays} elapsed days × 175)</div>
+>>>>>>> 16328935c7ec1d1fde5f03d27cc51f13422985ee
                     </div>
                 </div>
             </div>
@@ -718,6 +1050,146 @@ async function loadReports(userId, containerId) {
     container.innerHTML = html;
 }
 
+<<<<<<< HEAD
+// Helper: count elapsed days in a week (for fair denominator)
+function getElapsedDays(sunStr) {
+    const weekStart = parseLocalDate(sunStr);
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+
+    if (today >= weekEnd) return 7; // Full week elapsed
+    if (today < weekStart) return 0; // Future week
+
+    // Current week: count days from Sunday to today (inclusive)
+    const diffMs = today - weekStart;
+    return Math.min(7, Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1);
+}
+
+// Generate 4-week comparison table
+function generate4WeekComparison(weeks, weeksData) {
+    const container = document.getElementById('four-week-comparison');
+    if (!container) return;
+
+    if (weeks.length === 0) {
+        container.innerHTML = '<p style="color: #999; text-align: center;">Not enough data for comparison</p>';
+        return;
+    }
+
+    // Compute data for all weeks first
+    const weekResults = weeks.map(sunStr => {
+        const week = weeksData[sunStr];
+        const weekStart = parseLocalDate(week.sunStr);
+        const elapsedDays = getElapsedDays(week.sunStr);
+        const fairDenom = elapsedDays * 175;
+
+        let weekTotal = 0;
+        let weekNotesMins = 0;
+        let weekNotesMarks = 0;
+
+        for (let i = 0; i < 7; i++) {
+            const currentDate = new Date(weekStart);
+            currentDate.setDate(currentDate.getDate() + i);
+            const dateStr = toLocalDateStr(currentDate);
+            const entry = week.days[dateStr] || getNRData(dateStr);
+
+            weekTotal += entry.totalScore ?? 0;
+            weekNotesMins += (entry.notesMinutes === 'NR' ? 0 : entry.notesMinutes) || 0;
+            weekNotesMarks += entry.scores?.notes ?? 0;
+        }
+
+        let adjustedNotesMarks = weekNotesMarks;
+        if (weekNotesMins >= 245) {
+            adjustedNotesMarks = 175;
+        }
+        const adjustedTotal = weekTotal - weekNotesMarks + adjustedNotesMarks;
+        const weekPercent = fairDenom > 0 ? Math.round((adjustedTotal / fairDenom) * 100) : 0;
+
+        return { sunStr, week, adjustedTotal, fairDenom, weekPercent, elapsedDays };
+    });
+
+    // Build table — weeks are newest-first; trend compares each week to the older week
+    let tableHTML = `
+        <table class="comparison-table">
+            <thead>
+                <tr>
+                    <th>Week</th>
+                    <th>Total Score</th>
+                    <th>Percentage</th>
+                    <th>Trend</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+
+    weekResults.forEach((wr, idx) => {
+        // Compare with the next item in array (which is the older week)
+        let trendIcon = '—';
+        let trendColor = '#666';
+        const olderWeek = weekResults[idx + 1];
+        if (olderWeek) {
+            const diff = wr.weekPercent - olderWeek.weekPercent;
+            if (diff > 0) {
+                trendIcon = `&#9650; +${diff}%`;
+                trendColor = 'green';
+            } else if (diff < 0) {
+                trendIcon = `&#9660; ${diff}%`;
+                trendColor = 'red';
+            } else {
+                trendIcon = '&#8596; 0%';
+            }
+        }
+
+        const percentColor = wr.weekPercent >= 80 ? 'green' : wr.weekPercent >= 60 ? 'orange' : 'red';
+
+        tableHTML += `
+            <tr>
+                <td><strong>${wr.week.label.split('_')[0]}</strong></td>
+                <td><strong>${wr.adjustedTotal}/${wr.fairDenom}</strong></td>
+                <td style="color: ${percentColor}; font-weight: bold; font-size: 1.1em;">${wr.weekPercent}%</td>
+                <td style="color: ${trendColor}; font-weight: bold;">${trendIcon}</td>
+            </tr>
+        `;
+    });
+
+    tableHTML += `
+            </tbody>
+        </table>
+    `;
+
+    container.innerHTML = tableHTML;
+}
+
+// --- 8. CHARTS ---
+let lastActivityData = null; // Store for filter toggling
+
+async function generateCharts() {
+    const period = document.getElementById('chart-period').value;
+
+    if (period === 'daily') {
+        await generateDailyCharts();
+    } else if (period === 'weekly') {
+        await generateWeeklyCharts();
+    } else if (period === 'monthly') {
+        await generateMonthlyCharts();
+    }
+}
+
+window.updateActivityChart = () => {
+    if (!lastActivityData) return;
+    const { labels, datasets } = lastActivityData;
+    const activeFilters = {};
+    document.querySelectorAll('#activity-filters input[type="checkbox"]').forEach(cb => {
+        activeFilters[cb.dataset.activity] = cb.checked;
+    });
+    const filtered = {};
+    Object.keys(datasets).forEach(key => {
+        if (activeFilters[key]) filtered[key] = datasets[key];
+    });
+    renderActivityChart(labels, filtered);
+};
+=======
 // 4-week comparison — always shows 4 weeks (NR for missing), trend oldest→newest, fair denominator
 function generate4WeekComparison(weeksNewestFirst, weeksData) {
     const container = document.getElementById('four-week-comparison');
@@ -861,16 +1333,54 @@ async function generateCharts() {
 
 // Global store for activity chart data (for filter updates)
 let _currentActivityTotals = null;
+>>>>>>> 16328935c7ec1d1fde5f03d27cc51f13422985ee
 
 async function generateDailyCharts() {
     const today = new Date();
     const dates = [];
+<<<<<<< HEAD
+
+=======
+>>>>>>> 16328935c7ec1d1fde5f03d27cc51f13422985ee
     for (let i = 27; i >= 0; i--) {
         const d = new Date(today);
         d.setDate(today.getDate() - i);
-        dates.push(d.toISOString().split('T')[0]);
+        dates.push(toLocalDateStr(d));
     }
 
+<<<<<<< HEAD
+    // Firestore 'in' query supports max 10 items, so batch the queries
+    const data = {};
+    for (let i = 0; i < dates.length; i += 10) {
+        const batch = dates.slice(i, i + 10);
+        const snapshot = await db.collection('users').doc(currentUser.uid)
+            .collection('sadhana')
+            .where(firebase.firestore.FieldPath.documentId(), 'in', batch)
+            .get();
+        snapshot.forEach(doc => {
+            data[doc.id] = doc.data();
+        });
+    }
+
+    const labels = dates.map(d => {
+        const date = new Date(d);
+        return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+    });
+    const scores = dates.map(d => data[d]?.totalScore || 0);
+    const activityDatasets = {
+        sleep: dates.map(d => data[d]?.scores?.sleep || 0),
+        wakeup: dates.map(d => data[d]?.scores?.wakeup || 0),
+        morning: dates.map(d => data[d]?.scores?.morningProgram || 0),
+        chanting: dates.map(d => data[d]?.scores?.chanting || 0),
+        reading: dates.map(d => data[d]?.scores?.reading || 0),
+        hearing: dates.map(d => data[d]?.scores?.hearing || 0),
+        notes: dates.map(d => data[d]?.scores?.notes || 0)
+    };
+
+    lastActivityData = { labels, datasets: activityDatasets };
+    renderScoreChart(labels, scores, 175);
+    updateActivityChart();
+=======
     // Firestore v8 'in' limit is 10 — use date range query instead
     const snapshot = await db.collection('users').doc(currentUser.uid)
         .collection('sadhana')
@@ -908,6 +1418,7 @@ async function generateDailyCharts() {
 
     renderScoreLineChart(labels, scores);
     renderActivityBarChart(_currentActivityTotals);
+>>>>>>> 16328935c7ec1d1fde5f03d27cc51f13422985ee
 }
 
 async function generateWeeklyCharts() {
@@ -930,7 +1441,7 @@ async function generateWeeklyCharts() {
         for (let i = 0; i < 7; i++) {
             const d = new Date(weekStart);
             d.setDate(weekStart.getDate() + i);
-            weekDates.push(d.toISOString().split('T')[0]);
+            weekDates.push(toLocalDateStr(d));
         }
 
         // Use range query — safe and no 'in' limit issue
@@ -992,8 +1503,8 @@ async function generateMonthlyCharts() {
 
         const snapshot = await db.collection('users').doc(currentUser.uid)
             .collection('sadhana')
-            .where(firebase.firestore.FieldPath.documentId(), '>=', startDate.toISOString().split('T')[0])
-            .where(firebase.firestore.FieldPath.documentId(), '<=', endDate.toISOString().split('T')[0])
+            .where(firebase.firestore.FieldPath.documentId(), '>=', toLocalDateStr(startDate))
+            .where(firebase.firestore.FieldPath.documentId(), '<=', toLocalDateStr(endDate))
             .get();
 
         let monthTotal = 0, monthDays = 0;
@@ -1290,6 +1801,12 @@ function setupTapahDateSelect() {
     for (let i = 0; i < 5; i++) {
         const d = new Date();
         d.setDate(d.getDate() - i);
+<<<<<<< HEAD
+        const iso = toLocalDateStr(d);
+        const opt = document.createElement('option'); 
+        opt.value = iso; 
+        opt.textContent = iso;
+=======
         const iso = d.toISOString().split('T')[0];
         const opt = document.createElement('option');
         opt.value = iso;
@@ -1831,6 +2348,7 @@ function setupDateSelect() {
         // Show human-friendly label
         const label = i === 0 ? `Today (${iso})` : i === 1 ? `Yesterday (${iso})` : iso;
         opt.textContent = label;
+>>>>>>> 16328935c7ec1d1fde5f03d27cc51f13422985ee
         s.appendChild(opt);
     }
 }
@@ -1839,10 +2357,36 @@ const profileForm = document.getElementById('profile-form');
 if (profileForm) {
     profileForm.onsubmit = async (e) => {
         e.preventDefault();
+<<<<<<< HEAD
+        if (!currentUser) {
+            alert('Please login first');
+            return;
+        }
+        const name = document.getElementById('profile-name').value.trim();
+        if (!name) {
+            alert('Please enter your name');
+            return;
+        }
+        try {
+            const data = {
+                name: name,
+                role: userProfile?.role || 'user',
+                createdAt: userProfile?.createdAt || firebase.firestore.FieldValue.serverTimestamp()
+            };
+            console.log('Saving profile to Firestore for UID:', currentUser.uid);
+            await db.collection('users').doc(currentUser.uid).set(data, { merge: true });
+            alert("Name saved!");
+            location.reload();
+        } catch (error) {
+            console.error('Profile save failed:', error);
+            alert('Error saving profile: ' + error.message + '\n\nCheck Firestore rules in Firebase Console.');
+        }
+=======
         const data = { name: document.getElementById('profile-name').value.trim(), role: userProfile?.role || 'user' };
         await db.collection('users').doc(currentUser.uid).set(data, { merge: true });
         alert("Name saved!");
         location.reload();
+>>>>>>> 16328935c7ec1d1fde5f03d27cc51f13422985ee
     };
 }
 
