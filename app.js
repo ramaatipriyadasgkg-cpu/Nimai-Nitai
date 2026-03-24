@@ -20,6 +20,18 @@ let scoreChart = null, activityChart = null;
 let editingDate = null;
 
 // --- 2. HELPERS ---
+// Local date helpers — avoids toISOString() UTC bug
+// (IST users between midnight–5:30 AM would get yesterday's date with toISOString)
+function toLocalDateStr(date) {
+    const d = date || new Date();
+    return d.getFullYear() + '-' +
+        String(d.getMonth() + 1).padStart(2, '0') + '-' +
+        String(d.getDate()).padStart(2, '0');
+}
+function parseLocalDate(dateStr) {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    return new Date(y, m - 1, d);
+}
 const t2m = (t, isSleep = false) => {
     if (!t || t === "NR") return 9999;
     let [h, m] = t.split(':').map(Number);
@@ -28,7 +40,7 @@ const t2m = (t, isSleep = false) => {
 };
 
 function getWeekInfo(dateStr) {
-    const d = new Date(dateStr);
+    const d = new Date(dateStr + 'T00:00:00');
     const sun = new Date(d); sun.setDate(d.getDate() - d.getDay());
     const sat = new Date(sun); sat.setDate(sun.getDate() + 6);
     const fmt = (date) => {
@@ -36,7 +48,7 @@ function getWeekInfo(dateStr) {
         const month = date.toLocaleString('en-GB', { month: 'short' });
         return `${day} ${month}`;
     };
-    return { sunStr: sun.toISOString().split('T')[0], label: `${fmt(sun)} to ${fmt(sat)}_${sun.getFullYear()}` };
+    return { sunStr: toLocalDateStr(sun), label: `${fmt(sun)} to ${fmt(sat)}_${sun.getFullYear()}` };
 }
 
 function getNRData(date) {
@@ -80,13 +92,13 @@ window.downloadUserExcel = async (userId, userName) => {
             dataArray.push(['Day', '1.To Bed', 'Mks', '2. Wake Up', 'Mks', '3. Japa', 'Mks', '4. MP', 'Mks', '5. DS', 'Mks', '6. Pathan', 'Mks', '7. Sarwan', 'Mks', '8. Ntes Rev.', 'Mks', 'Day Wise']);
 
             let weekTotals = { sleepM: 0, wakeupM: 0, morningProgramM: 0, chantingM: 0, readingM: 0, hearingM: 0, notesM: 0, daySleepM: 0, readingMins: 0, hearingMins: 0, notesMins: 0, daySleepMins: 0, total: 0 };
-            const weekStart = new Date(week.sunStr);
+            const weekStart = new Date(week.sunStr + 'T00:00:00');
             const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
             for (let i = 0; i < 7; i++) {
                 const currentDate = new Date(weekStart);
                 currentDate.setDate(currentDate.getDate() + i);
-                const dateStr = currentDate.toISOString().split('T')[0];
+                const dateStr = toLocalDateStr(currentDate);
                 const dayLabel = `${dayNames[i]} ${String(currentDate.getDate()).padStart(2, '0')}`;
                 const entry = week.days[dateStr] || getNRData(dateStr);
 
@@ -177,7 +189,6 @@ window.switchTab = (t) => {
 
 // --- 5. AUTH STATE ---
 auth.onAuthStateChanged(async (user) => {
-    console.log('Auth state changed:', user ? 'LOGGED IN uid=' + user.uid : 'LOGGED OUT');
     if (user) {
         currentUser = user;
         const userDoc = await db.collection('users').doc(user.uid).get();
@@ -375,7 +386,7 @@ if (sadhanaForm) {
         } catch (error) {
             console.error('SADHANA ERROR FULL:', error);
             console.error('Error code:', error.code);
-            alert('Error saving: ' + error.message + '\n\nCode: ' + error.code + '\n\nPath: users/' + currentUser?.uid + '/sadhana/' + date);
+            alert('Error saving: ' + error.message);
         }
     };
 }
@@ -581,7 +592,7 @@ async function loadReports(userId, containerId) {
     let html = '';
     sortedWeeks.forEach(sunStr => {
         const week = weeksData[sunStr];
-        const weekStart = new Date(sunStr);
+        const weekStart = new Date(sunStr + 'T00:00:00');
         const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
         let weekTotals = { total: 0, readingMins: 0, hearingMins: 0, notesMins: 0, notesMarks: 0, sleepMarks: 0, wakeupMarks: 0, morningMarks: 0, chantingMarks: 0, readingMarks: 0, hearingMarks: 0, daySleepMarks: 0 };
@@ -648,7 +659,8 @@ async function loadReports(userId, containerId) {
         let elapsedDays = 0;
         for (let i = 0; i < 7; i++) {
             const d = new Date(weekStart); d.setDate(weekStart.getDate() + i);
-            if (d <= new Date()) elapsedDays++;
+            const today2 = new Date(); today2.setHours(23,59,59,0);
+            if (d <= today2) elapsedDays++;
         }
         const fairMax = elapsedDays * 175;
         const weekPercent = Math.round((adjustedTotal / 1225) * 100);
@@ -665,7 +677,7 @@ async function loadReports(userId, containerId) {
                     <div style="overflow-x:auto;">
                     <table class="daily-table">
                         <thead>
-                            <tr style="background:var(--secondary);color:black;">
+                            <tr style="background:var(--secondary);color:white;">
                                 <th>Day</th><th>Bed Time</th><th>Mks</th><th>Wake Up</th><th>Mks</th>
                                 <th>Japa</th><th>Mks</th><th>Morn. Prog</th><th>Mks</th><th>Day Sleep</th><th>Mks</th>
                                 <th>Pathan</th><th>Mks</th><th>Sarwan</th><th>Mks</th><th>Notes Rev.</th><th>Mks</th><th>Day %</th>
@@ -727,20 +739,20 @@ function generate4WeekComparison(weeksNewestFirst, weeksData) {
     for (let w = 3; w >= 0; w--) {
         const sun = new Date(thisWeekSun);
         sun.setDate(thisWeekSun.getDate() - w * 7);
-        last4Suns.push(sun.toISOString().split('T')[0]);
+        last4Suns.push(toLocalDateStr(sun));
     }
 
     // Compute stats for each of the 4 weeks (oldest first for trend calculation)
     const weekStats = last4Suns.map(sunStr => {
         const week = weeksData[sunStr];
-        const weekStart = new Date(sunStr);
+        const weekStart = new Date(sunStr + 'T00:00:00');
         let weekTotal = 0, weekNotesMins = 0, weekNotesMarks = 0, filledDays = 0;
 
         for (let i = 0; i < 7; i++) {
             const currentDate = new Date(weekStart);
             currentDate.setDate(weekStart.getDate() + i);
-            const dateStr = currentDate.toISOString().split('T')[0];
-            const isFuture = new Date(dateStr) > today;
+            const dateStr = toLocalDateStr(currentDate);
+            const isFuture = new Date(dateStr + 'T00:00:00') > today;
             if (isFuture) continue; // skip future days entirely for fair denominator
             const entry = (week && week.days[dateStr]) ? week.days[dateStr] : getNRData(dateStr);
             const isFilled = !!(week && week.days[dateStr]);
@@ -759,8 +771,8 @@ function generate4WeekComparison(weeksNewestFirst, weeksData) {
         const rawPercent = Math.round((adjustedTotal / 1225) * 100);
 
         // Label
-        const sunDate = new Date(sunStr);
-        const sat = new Date(sunStr); sat.setDate(sunDate.getDate() + 6);
+        const sunDate = new Date(sunStr + 'T00:00:00');
+        const sat = new Date(sunStr + 'T00:00:00'); sat.setDate(sunDate.getDate() + 6);
         const fmt = d => `${String(d.getDate()).padStart(2,'0')} ${d.toLocaleString('en-GB',{month:'short'})}`;
         const label = `${fmt(sunDate)} – ${fmt(sat)}`;
 
@@ -925,7 +937,7 @@ async function generateWeeklyCharts() {
         for (let i = 0; i < 7; i++) {
             const d = new Date(weekStart);
             d.setDate(weekStart.getDate() + i);
-            weekDates.push(d.toISOString().split('T')[0]);
+            weekDates.push(toLocalDateStr(d));
         }
 
         // Use range query — safe and no 'in' limit issue
@@ -987,8 +999,8 @@ async function generateMonthlyCharts() {
 
         const snapshot = await db.collection('users').doc(currentUser.uid)
             .collection('sadhana')
-            .where(firebase.firestore.FieldPath.documentId(), '>=', startDate.toISOString().split('T')[0])
-            .where(firebase.firestore.FieldPath.documentId(), '<=', endDate.toISOString().split('T')[0])
+            .where(firebase.firestore.FieldPath.documentId(), '>=', toLocalDateStr(startDate))
+            .where(firebase.firestore.FieldPath.documentId(), '<=', toLocalDateStr(endDate))
             .get();
 
         let monthTotal = 0, monthDays = 0;
@@ -998,7 +1010,7 @@ async function generateMonthlyCharts() {
     }
 
     document.getElementById('score-ring-container').style.display = 'none';
-    renderScoreLineChart(labels, scores, 'line');
+    renderScoreLineChart(labels, scores);
     // Hide activity chart for monthly
     const actSection = document.getElementById('activity-chart-section');
     if (actSection) actSection.style.display = 'none';
@@ -1313,7 +1325,7 @@ function setupTapahDateSelect() {
     for (let i = 0; i < 5; i++) {
         const d = new Date();
         d.setDate(d.getDate() - i);
-        const iso = d.toISOString().split('T')[0];
+        const iso = toLocalDateStr(d);
         const opt = document.createElement('option');
         opt.value = iso;
         opt.textContent = i === 0 ? `Today (${iso})` : i === 1 ? `Yesterday (${iso})` : iso;
@@ -1433,8 +1445,6 @@ if (tapahForm) {
         const percent = Math.round((total / 50) * 100);
 
         try {
-            console.log('Tapah submit — uid:', currentUser.uid, 'date:', date);
-            console.log('Writing to path: users/' + currentUser.uid + '/tapah/' + date);
             await db.collection('users').doc(currentUser.uid).collection('tapah').doc(date).set({
                 anukul: anukulAnswers,
                 pratikul: pratikulAnswers,
@@ -1454,7 +1464,7 @@ if (tapahForm) {
             console.error('TAPAH ERROR FULL:', err);
             console.error('Error code:', err.code);
             console.error('Error message:', err.message);
-            alert('Error saving Tapah: ' + err.message + '\n\nCode: ' + err.code + '\n\nPath: users/' + currentUser?.uid + '/tapah/' + date);
+            alert('Error saving Tapah: ' + err.message);
         }
     };
 }
@@ -1515,12 +1525,12 @@ function renderTapahReport(allData) {
     if (!container) return;
 
     const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
+    const todayStr = toLocalDateStr(today);
 
     // Get current week Sunday
     const thisWeekSun = new Date(today);
     thisWeekSun.setDate(today.getDate() - today.getDay());
-    const thisWeekSunStr = thisWeekSun.toISOString().split('T')[0];
+    const thisWeekSunStr = toLocalDateStr(thisWeekSun);
 
     // All questions list
     const allQuestions = [
@@ -1536,7 +1546,7 @@ function renderTapahReport(allData) {
     for (let i = 0; i < 7; i++) {
         const d = new Date(thisWeekSun);
         d.setDate(thisWeekSun.getDate() + i);
-        const ds = d.toISOString().split('T')[0];
+        const ds = toLocalDateStr(d);
         if (ds <= todayStr) allDates.add(ds);
     }
 
@@ -1550,7 +1560,7 @@ function renderTapahReport(allData) {
     [...allDates].sort().forEach(dateStr => {
         const d = new Date(dateStr + 'T00:00:00');
         const sun = new Date(d); sun.setDate(d.getDate() - d.getDay());
-        const sunStr = sun.toISOString().split('T')[0];
+        const sunStr = toLocalDateStr(sun);
         if (!weekMap[sunStr]) weekMap[sunStr] = [];
         weekMap[sunStr].push(dateStr);
     });
@@ -1607,7 +1617,7 @@ function renderTapahReport(allData) {
     const fmtWeek = (sunStr) => {
         const sun = new Date(sunStr + 'T00:00:00');
         const sat = new Date(sun); sat.setDate(sun.getDate() + 6);
-        return `${fmtDate(sunStr)} – ${fmtDate(sat.toISOString().split('T')[0])}`;
+        return `${fmtDate(sunStr)} – ${fmtDate(toLocalDateStr(sat))}`;
     };
 
     // Score summary for a list of dates
@@ -1668,9 +1678,6 @@ function renderTapahReport(allData) {
             columns.push({ type: 'month', monthKey, dates: monthDates });
         }
     });
-
-    // Auto-expand current week always
-    const currentWeekDates = (weekMap[thisWeekSunStr] || []).filter(d => d <= todayStr);
 
     // Build header row
     let headerCells = '';
@@ -1848,7 +1855,7 @@ function setupDateSelect() {
     for (let i = 0; i < 5; i++) {
         const d = new Date();
         d.setDate(d.getDate() - i);
-        const iso = d.toISOString().split('T')[0];
+        const iso = toLocalDateStr(d);
         const opt = document.createElement('option');
         opt.value = iso;
         // Show human-friendly label
@@ -1862,7 +1869,7 @@ const profileForm = document.getElementById('profile-form');
 if (profileForm) {
     profileForm.onsubmit = async (e) => {
         e.preventDefault();
-        const data = { name: document.getElementById('profile-name').value.trim(), role: userProfile?.role || 'user' };
+        const data = { name: document.getElementById('profile-name').value.trim() };
         await db.collection('users').doc(currentUser.uid).set(data, { merge: true });
         alert("Name saved!");
         location.reload();
