@@ -40,14 +40,11 @@ const t2m = (t, isSleep = false) => {
 };
 
 function getWeekInfo(dateStr) {
+    const MONTHS_WK = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const d = new Date(dateStr + 'T00:00:00');
     const sun = new Date(d); sun.setDate(d.getDate() - d.getDay());
     const sat = new Date(sun); sat.setDate(sun.getDate() + 6);
-    const fmt = (date) => {
-        const day = String(date.getDate()).padStart(2, '0');
-        const month = date.toLocaleString('en-GB', { month: 'short' });
-        return `${day} ${month}`;
-    };
+    const fmt = (date) => `${String(date.getDate()).padStart(2,'0')} ${MONTHS_WK[date.getMonth()]}`;
     return { sunStr: toLocalDateStr(sun), label: `${fmt(sun)} to ${fmt(sat)}_${sun.getFullYear()}` };
 }
 
@@ -571,7 +568,32 @@ function getScoreBackground(score) {
 // --- 8. REPORTS ---
 async function loadReports(userId, containerId) {
     const container = document.getElementById(containerId);
-    const snap = await db.collection('users').doc(userId).collection('sadhana').get();
+    if (!container) return; // Guard: element may not exist on this page
+
+    // Show loading state immediately — critical for mobile on slow connections
+    container.innerHTML = `
+        <div style="text-align:center;padding:40px 20px;color:#888;">
+            <div style="font-size:28px;margin-bottom:10px;">⏳</div>
+            <div style="font-weight:600;">Loading reports…</div>
+            <div style="font-size:12px;margin-top:6px;">Fetching your data</div>
+        </div>`;
+
+    let snap;
+    try {
+        snap = await db.collection('users').doc(userId).collection('sadhana').get();
+    } catch (err) {
+        container.innerHTML = `
+            <div style="text-align:center;padding:40px 20px;background:#fff0f0;border-radius:10px;color:#e74c3c;">
+                <div style="font-size:28px;margin-bottom:10px;">⚠️</div>
+                <div style="font-weight:700;margin-bottom:6px;">Could not load reports</div>
+                <div style="font-size:13px;color:#666;margin-bottom:16px;">${err.message}</div>
+                <button onclick="loadReports('${userId}','${containerId}')"
+                    style="padding:10px 24px;background:#3498db;color:white;border:none;border-radius:8px;font-weight:700;font-size:14px;cursor:pointer;width:auto;">
+                    🔄 Retry
+                </button>
+            </div>`;
+        return;
+    }
 
     const weeksData = {};
     snap.forEach(doc => {
@@ -588,6 +610,8 @@ async function loadReports(userId, containerId) {
     thisWeekSun.setDate(today.getDate() - today.getDay());
 
     // Build a set of ALL weeks to show: last 4 + any older weeks with data
+    const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const fmtDate = d => `${String(d.getDate()).padStart(2,'0')} ${MONTHS[d.getMonth()]}`;
     const last4Suns = new Set();
     for (let w = 0; w < 4; w++) {
         const sun = new Date(thisWeekSun);
@@ -596,8 +620,7 @@ async function loadReports(userId, containerId) {
         last4Suns.add(sunStr);
         if (!weeksData[sunStr]) {
             const sat = new Date(sun); sat.setDate(sun.getDate() + 6);
-            const fmt = d => `${String(d.getDate()).padStart(2,'0')} ${d.toLocaleString('en-GB',{month:'short'})}`;
-            weeksData[sunStr] = { label: `${fmt(sun)} to ${fmt(sat)}_${sun.getFullYear()}`, sunStr, days: {} };
+            weeksData[sunStr] = { label: `${fmtDate(sun)} to ${fmtDate(sat)}_${sun.getFullYear()}`, sunStr, days: {} };
         }
     }
 
@@ -618,14 +641,11 @@ async function loadReports(userId, containerId) {
         let weekTotals = { total: 0, readingMins: 0, hearingMins: 0, notesMins: 0, notesMarks: 0, sleepMarks: 0, wakeupMarks: 0, morningMarks: 0, chantingMarks: 0, readingMarks: 0, hearingMarks: 0, daySleepMarks: 0 };
 
         let tableRows = '';
-        // First pass: accumulate totals (Sun→Sat order) — SKIP future dates entirely
-        const todayMidnight = new Date(); todayMidnight.setHours(23,59,59,0);
+        // First pass: accumulate totals (Sun→Sat order)
         for (let i = 0; i < 7; i++) {
             const currentDate = new Date(weekStart);
             currentDate.setDate(weekStart.getDate() + i);
             const dateStr = toLocalDateStr(currentDate);
-            // Future dates are NOT yet due — do not count as NR, do not penalise
-            if (currentDate > todayMidnight) continue;
             const entry = week.days[dateStr] || getNRData(dateStr);
             const isNR = !week.days[dateStr];
 
@@ -643,25 +663,23 @@ async function loadReports(userId, containerId) {
             weekTotals.daySleepMarks+= entry.scores?.daySleep ?? 0;
         }
         // Second pass: render rows newest-day-first (Sat→Sun = i from 6 down to 0)
-        // Future dates are completely skipped — no row, no NR penalty
         for (let i = 6; i >= 0; i--) {
             const currentDate = new Date(weekStart);
             currentDate.setDate(weekStart.getDate() + i);
             const dateStr = toLocalDateStr(currentDate);
-            const isFuture = currentDate > todayMidnight;
-
-            // Future date: skip entirely — it hasn't happened yet
-            if (isFuture) continue;
-
+            const isFuture = currentDate > new Date();
             const entry = week.days[dateStr] || getNRData(dateStr);
             const isNR = !week.days[dateStr];
             const hasBeenEdited = !isNR && entry.wasEdited === true;
 
             const dayPercent = entry.dayPercent ?? -23;
+            const isPast = !isFuture && !isNR;
 
-            // Pass/Fail badge
+            // Pass/Fail badge — only for past filled entries
             let pfBadge = '';
-            if (isNR) {
+            if (isFuture) {
+                pfBadge = '<span style="font-size:10px;color:#bbb;">—</span>';
+            } else if (isNR) {
                 pfBadge = '<span style="display:inline-block;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;background:#fde8e8;color:#e74c3c;border:1px solid #f5c6c6;">Fail</span>';
             } else if (dayPercent >= 50) {
                 pfBadge = '<span style="display:inline-block;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;background:#e8f8f0;color:#27ae60;border:1px solid #a9dfbf;">Pass</span>';
@@ -670,15 +688,16 @@ async function loadReports(userId, containerId) {
             }
 
             // Date label with optional edit history pencil
+            // Use data-date attribute to avoid quote-in-quote issues on mobile browsers
             const editedFlag = hasBeenEdited
-                ? ` <span title="Entry was edited" style="color:#9b59b6;font-size:10px;cursor:pointer;" onclick="viewEditHistory('${dateStr}')">✏️</span>`
+                ? ` <span class="edit-hist-btn" data-date="${dateStr}" title="Entry was edited" style="color:#9b59b6;font-size:10px;cursor:pointer;">✏️</span>`
                 : '';
             const dateLabel = `<strong>${String(currentDate.getDate()).padStart(2,'0')}/${String(currentDate.getMonth()+1).padStart(2,'0')}${editedFlag}</strong>`;
 
-            // Action button
+            // Action button — use data-date to avoid nested quote issues
             const actionBtn = isNR
-                ? `<button onclick="editEntry('${dateStr}')" style="padding:3px 9px;font-size:11px;background:#27ae60;color:white;width:auto;margin:0;border-radius:12px;border:none;cursor:pointer;font-weight:600;">+ Fill</button>`
-                : `<button onclick="editEntry('${dateStr}')" title="Edit entry" style="padding:3px 8px;font-size:13px;background:transparent;color:#3498db;width:auto;margin:0;border:none;cursor:pointer;">✏️</button>`;
+                ? `<button class="fill-btn" data-date="${dateStr}" style="padding:3px 9px;font-size:11px;background:#27ae60;color:white;width:auto;margin:0;border-radius:12px;border:none;cursor:pointer;font-weight:600;">+ Fill</button>`
+                : `<button class="edit-btn" data-date="${dateStr}" title="Edit entry" style="padding:3px 8px;font-size:13px;background:transparent;color:#3498db;width:auto;margin:0;border:none;cursor:pointer;">✏️</button>`;
 
             // Value display helpers
             const tv = (val) => (val === 'NR' || val === undefined || val === null) ? '<span style="color:#e74c3c;font-weight:600;">NR</span>' : val;
@@ -688,9 +707,10 @@ async function loadReports(userId, containerId) {
                 : tv(entry.morningProgramTime);
             const dsVal = entry.daySleepMinutes === 'NR' ? '<span style="color:#e74c3c;">NR</span>' : `${entry.daySleepMinutes ?? 0}m`;
 
+            // Day % cell
             const pctColor = dayPercent >= 70 ? '#27ae60' : dayPercent >= 50 ? '#f39c12' : '#e74c3c';
             const pctBg    = dayPercent >= 50 ? '#f0fff4' : '#fff0f0';
-            const rowBg    = isNR ? 'background:#fff8f8;' : '';
+            const rowBg    = isNR ? 'background:#fff8f8;' : isFuture ? 'background:#fafafa;' : '';
 
             tableRows += `
                 <tr style="${rowBg}border-bottom:1px solid #f0f0f0;">
@@ -826,6 +846,17 @@ async function loadReports(userId, containerId) {
     });
 
     container.innerHTML = html;
+
+    // Event delegation — handles fill-btn, edit-btn, edit-hist-btn
+    // Avoids inline onclick with nested quotes which breaks on some mobile browsers
+    container.addEventListener('click', (e) => {
+        const fillBtn = e.target.closest('.fill-btn');
+        const editBtn = e.target.closest('.edit-btn');
+        const histBtn = e.target.closest('.edit-hist-btn');
+        if (fillBtn) { editEntry(fillBtn.dataset.date); return; }
+        if (editBtn) { editEntry(editBtn.dataset.date); return; }
+        if (histBtn) { viewEditHistory(histBtn.dataset.date); return; }
+    });
 }
 
 // 4-week comparison — always shows 4 weeks (NR for missing), trend oldest→newest, fair denominator
@@ -874,9 +905,10 @@ function generate4WeekComparison(weeksNewestFirst, weeksData) {
         const rawPercent = Math.round((adjustedTotal / 1225) * 100);
 
         // Label
+        const MONTHS_CMP = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
         const sunDate = new Date(sunStr + 'T00:00:00');
         const sat = new Date(sunStr + 'T00:00:00'); sat.setDate(sunDate.getDate() + 6);
-        const fmt = d => `${String(d.getDate()).padStart(2,'0')} ${d.toLocaleString('en-GB',{month:'short'})}`;
+        const fmt = d => `${String(d.getDate()).padStart(2,'0')} ${MONTHS_CMP[d.getMonth()]}`;
         const label = `${fmt(sunDate)} – ${fmt(sat)}`;
 
         return { sunStr, label, adjustedTotal, maxPossible, fairPercent, rawPercent, filledDays };
@@ -992,7 +1024,7 @@ async function generateDailyCharts() {
     const data = {};
     snapshot.forEach(doc => { data[doc.id] = doc.data(); });
 
-    const labels = dates.map(d => new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }));
+    const labels = dates.map(d => (() => { const _d = new Date(d + 'T00:00:00'); const _M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return String(_d.getDate()).padStart(2,'0')+' '+_M[_d.getMonth()]; })());
     // NR past days = -40 shown on chart; today unfilled = null (gap, no penalty yet)
     const scores = dates.map(d => {
         if (data[d] !== undefined) return data[d].totalScore ?? null;
@@ -1116,7 +1148,7 @@ async function generateMonthlyCharts() {
 
         let monthTotal = 0, monthDays = 0;
         snapshot.forEach(doc => { monthTotal += doc.data().totalScore || 0; monthDays++; });
-        labels.push(month.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }));
+        labels.push((() => { const _M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return _M[month.getMonth()]+' '+String(month.getFullYear()).slice(2); })());
         scores.push(monthDays > 0 ? monthTotal : null);
     }
 
@@ -1717,13 +1749,15 @@ function renderTapahReport(allData) {
     };
 
     // Format date label: "01 Mar"
+    const _TAPAH_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const _TAPAH_MONTHS_LONG = ['January','February','March','April','May','June','July','August','September','October','November','December'];
     const fmtDate = (ds) => {
         const d = new Date(ds + 'T00:00:00');
-        return `${String(d.getDate()).padStart(2,'0')} ${d.toLocaleString('en-GB',{month:'short'})}`;
+        return `${String(d.getDate()).padStart(2,'0')} ${_TAPAH_MONTHS[d.getMonth()]}`;
     };
     const fmtMonth = (ym) => {
         const [y, m] = ym.split('-');
-        return new Date(y, m-1, 1).toLocaleString('en-GB', { month: 'long', year: 'numeric' });
+        return `${_TAPAH_MONTHS_LONG[parseInt(m,10)-1]} ${y}`;
     };
     const fmtWeek = (sunStr) => {
         const sun = new Date(sunStr + 'T00:00:00');
