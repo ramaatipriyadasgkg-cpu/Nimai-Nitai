@@ -618,11 +618,14 @@ async function loadReports(userId, containerId) {
         let weekTotals = { total: 0, readingMins: 0, hearingMins: 0, notesMins: 0, notesMarks: 0, sleepMarks: 0, wakeupMarks: 0, morningMarks: 0, chantingMarks: 0, readingMarks: 0, hearingMarks: 0, daySleepMarks: 0 };
 
         let tableRows = '';
-        // First pass: accumulate totals (Sun→Sat order)
+        // First pass: accumulate totals (Sun→Sat order) — SKIP future dates entirely
+        const todayMidnight = new Date(); todayMidnight.setHours(23,59,59,0);
         for (let i = 0; i < 7; i++) {
             const currentDate = new Date(weekStart);
             currentDate.setDate(weekStart.getDate() + i);
             const dateStr = toLocalDateStr(currentDate);
+            // Future dates are NOT yet due — do not count as NR, do not penalise
+            if (currentDate > todayMidnight) continue;
             const entry = week.days[dateStr] || getNRData(dateStr);
             const isNR = !week.days[dateStr];
 
@@ -640,23 +643,25 @@ async function loadReports(userId, containerId) {
             weekTotals.daySleepMarks+= entry.scores?.daySleep ?? 0;
         }
         // Second pass: render rows newest-day-first (Sat→Sun = i from 6 down to 0)
+        // Future dates are completely skipped — no row, no NR penalty
         for (let i = 6; i >= 0; i--) {
             const currentDate = new Date(weekStart);
             currentDate.setDate(weekStart.getDate() + i);
             const dateStr = toLocalDateStr(currentDate);
-            const isFuture = currentDate > new Date();
+            const isFuture = currentDate > todayMidnight;
+
+            // Future date: skip entirely — it hasn't happened yet
+            if (isFuture) continue;
+
             const entry = week.days[dateStr] || getNRData(dateStr);
             const isNR = !week.days[dateStr];
             const hasBeenEdited = !isNR && entry.wasEdited === true;
 
             const dayPercent = entry.dayPercent ?? -23;
-            const isPast = !isFuture && !isNR;
 
-            // Pass/Fail badge — only for past filled entries
+            // Pass/Fail badge
             let pfBadge = '';
-            if (isFuture) {
-                pfBadge = '<span style="font-size:10px;color:#bbb;">—</span>';
-            } else if (isNR) {
+            if (isNR) {
                 pfBadge = '<span style="display:inline-block;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;background:#fde8e8;color:#e74c3c;border:1px solid #f5c6c6;">Fail</span>';
             } else if (dayPercent >= 50) {
                 pfBadge = '<span style="display:inline-block;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;background:#e8f8f0;color:#27ae60;border:1px solid #a9dfbf;">Pass</span>';
@@ -683,10 +688,9 @@ async function loadReports(userId, containerId) {
                 : tv(entry.morningProgramTime);
             const dsVal = entry.daySleepMinutes === 'NR' ? '<span style="color:#e74c3c;">NR</span>' : `${entry.daySleepMinutes ?? 0}m`;
 
-            // Day % cell
             const pctColor = dayPercent >= 70 ? '#27ae60' : dayPercent >= 50 ? '#f39c12' : '#e74c3c';
             const pctBg    = dayPercent >= 50 ? '#f0fff4' : '#fff0f0';
-            const rowBg    = isNR ? 'background:#fff8f8;' : isFuture ? 'background:#fafafa;' : '';
+            const rowBg    = isNR ? 'background:#fff8f8;' : '';
 
             tableRows += `
                 <tr style="${rowBg}border-bottom:1px solid #f0f0f0;">
