@@ -374,7 +374,7 @@ if (sadhanaForm) {
                 totalScore: total,
                 dayPercent: dayPercent,
                 submittedAt: firebase.firestore.FieldValue.serverTimestamp(),
-                wasEdited: editingDate !== null ? true : (false)
+                wasEdited: editingDate !== null
             });
 
             const isEdit = editingDate !== null;
@@ -382,8 +382,6 @@ if (sadhanaForm) {
             alert(`${isEdit ? 'Updated' : 'Saved'}! Score: ${total}/175 (${dayPercent}%)`);
             switchTab('reports');
         } catch (error) {
-            console.error('SADHANA ERROR FULL:', error);
-            console.error('Error code:', error.code);
             alert('Error saving: ' + error.message);
         }
     };
@@ -545,7 +543,7 @@ window.viewEditHistory = async (dateStr) => {
 //   null/NR   → light red bg, red text in parentheses
 function scoreCell(score, isNR) {
     if (isNR || score === null || score === undefined) {
-        return { bg: '#fde8e8', color: '#e74c3c', text: `(${score ?? -5})` };
+        return { bg: '#fde8e8', color: '#e74c3c', text: isNR ? 'NR' : `(${score})` };
     }
     if (score >= 25) return { bg: 'transparent', color: '#27ae60', text: String(score) };
     if (score > 0)   return { bg: '#fffde7',     color: '#f39c12', text: String(score) };
@@ -849,14 +847,20 @@ async function loadReports(userId, containerId) {
 
     // Event delegation — handles fill-btn, edit-btn, edit-hist-btn
     // Avoids inline onclick with nested quotes which breaks on some mobile browsers
-    container.addEventListener('click', (e) => {
+    // CRITICAL FIX: Remove previous listener before adding new one
+    // (loadReports is called multiple times — listener stacking causes double-tap bug on mobile)
+    if (container._reportClickHandler) {
+        container.removeEventListener('click', container._reportClickHandler);
+    }
+    container._reportClickHandler = (e) => {
         const fillBtn = e.target.closest('.fill-btn');
         const editBtn = e.target.closest('.edit-btn');
         const histBtn = e.target.closest('.edit-hist-btn');
         if (fillBtn) { editEntry(fillBtn.dataset.date); return; }
         if (editBtn) { editEntry(editBtn.dataset.date); return; }
         if (histBtn) { viewEditHistory(histBtn.dataset.date); return; }
-    });
+    };
+    container.addEventListener('click', container._reportClickHandler);
 }
 
 // 4-week comparison — always shows 4 weeks (NR for missing), trend oldest→newest, fair denominator
@@ -892,7 +896,7 @@ function generate4WeekComparison(weeksNewestFirst, weeksData) {
             const isFilled = !!(week && week.days[dateStr]);
             weekTotal += entry.totalScore ?? 0;
             weekNotesMins += (isFilled && entry.notesMinutes !== 'NR') ? (entry.notesMinutes || 0) : 0;
-            weekNotesMarks += entry.scores?.notes || 0;
+            weekNotesMarks += entry.scores?.notes ?? 0;
             filledDays++;
         }
 
@@ -1034,7 +1038,7 @@ async function generateDailyCharts() {
 
     // Activity totals: NR past days contribute penalty scores (same as getNRData)
     const NR_SCORES = { sleep: -5, wakeup: -5, morningProgram: -5, chanting: -5, reading: -5, hearing: -5, notes: -5, daySleep: 0 };
-    const getS = (d, key) => data[d] ? (data[d]?.scores?.[key] || 0) : (d === todayStr ? 0 : NR_SCORES[key]);
+    const getS = (d, key) => data[d] ? (data[d]?.scores?.[key] ?? 0) : (d === todayStr ? 0 : NR_SCORES[key]);
     _currentActivityTotals = {
         Sleep:           dates.reduce((s, d) => s + getS(d, 'sleep'), 0),
         'Wake-up':       dates.reduce((s, d) => s + getS(d, 'wakeup'), 0),
@@ -1092,7 +1096,7 @@ async function generateWeeklyCharts() {
 
         let weekTotal = 0, weekDayCount = 0;
         const wData = {};
-        snapshot.forEach(doc => { wData[doc.id] = doc.data(); weekTotal += doc.data().totalScore || 0; weekDayCount++; });
+        snapshot.forEach(doc => { wData[doc.id] = doc.data(); weekTotal += doc.data().totalScore ?? 0; weekDayCount++; });
 
         labels.push(`Wk ${weekStart.getDate()}/${weekStart.getMonth() + 1}`);
         scores.push(weekDayCount > 0 ? weekTotal : null);
@@ -1147,7 +1151,7 @@ async function generateMonthlyCharts() {
             .get();
 
         let monthTotal = 0, monthDays = 0;
-        snapshot.forEach(doc => { monthTotal += doc.data().totalScore || 0; monthDays++; });
+        snapshot.forEach(doc => { monthTotal += doc.data().totalScore ?? 0; monthDays++; });
         labels.push((() => { const _M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return _M[month.getMonth()]+' '+String(month.getFullYear()).slice(2); })());
         scores.push(monthDays > 0 ? monthTotal : null);
     }
@@ -1604,9 +1608,6 @@ if (tapahForm) {
             alert(`${isEdit ? 'Updated' : 'Saved'}! Tapah Score: ${total}/50 (${percent}%)`);
             resetTapahForm();
         } catch (err) {
-            console.error('TAPAH ERROR FULL:', err);
-            console.error('Error code:', err.code);
-            console.error('Error message:', err.message);
             alert('Error saving Tapah: ' + err.message);
         }
     };
@@ -1656,11 +1657,23 @@ async function loadTapahReport() {
     if (!container) return;
     container.innerHTML = '<p style="color:#aaa;text-align:center;padding:30px;">Loading Tapah data…</p>';
 
-    const snap = await db.collection('users').doc(currentUser.uid).collection('tapah').get();
-    const allData = {};
-    snap.forEach(doc => { allData[doc.id] = doc.data(); });
-    window._tapahAllData = allData;
-    renderTapahReport(allData);
+    try {
+        const snap = await db.collection('users').doc(currentUser.uid).collection('tapah').get();
+        const allData = {};
+        snap.forEach(doc => { allData[doc.id] = doc.data(); });
+        window._tapahAllData = allData;
+        renderTapahReport(allData);
+    } catch (err) {
+        container.innerHTML = `
+            <div style="text-align:center;padding:30px;background:#fff0f0;border-radius:10px;color:#e74c3c;">
+                <div style="font-size:24px;margin-bottom:8px;">⚠️</div>
+                <div style="font-weight:700;">Could not load Tapah data</div>
+                <div style="font-size:13px;color:#666;margin:6px 0 14px;">${err.message}</div>
+                <button onclick="loadTapahReport()" style="padding:8px 20px;background:#3498db;color:white;border:none;border-radius:8px;font-weight:700;cursor:pointer;width:auto;">
+                    🔄 Retry
+                </button>
+            </div>`;
+    }
 }
 
 function renderTapahReport(allData) {
