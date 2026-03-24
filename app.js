@@ -671,7 +671,7 @@ async function loadReports(userId, containerId) {
             <div class="week-card ${weekClass}">
                 <div class="week-header" onclick="this.nextElementSibling.classList.toggle('expanded'); this.querySelector('.toggle-icon').textContent = this.nextElementSibling.classList.contains('expanded') ? '▼' : '▶';">
                     <span>${week.label.split('_')[0]}</span>
-                    <span>${adjustedTotal}/${fairMax} &nbsp;|&nbsp; Fair: ${fairPercent}% &nbsp;|&nbsp; Overall: ${weekPercent}% <span class="toggle-icon">▶</span></span>
+                    <span>${adjustedTotal}/${fairMax} (${fairPercent}%) <span class="toggle-icon">▶</span></span>
                 </div>
                 <div class="week-content">
                     <div style="overflow-x:auto;">
@@ -712,10 +712,8 @@ async function loadReports(userId, containerId) {
                     </table>
                     </div>
                     <div style="margin-top:15px;padding:15px;background:var(--secondary);color:white;border-radius:8px;text-align:center;">
-                        <strong style="font-size:1.2em;">OVERALL: ${adjustedTotal}/1225 (${weekPercent}%)</strong>
-                        &nbsp;&nbsp;|&nbsp;&nbsp;
-                        <strong style="font-size:1.2em;">Fair %: ${adjustedTotal}/${fairMax} (${fairPercent}%)</strong>
-                        <div style="font-size:11px;opacity:0.85;margin-top:4px;">Fair % = score ÷ (${elapsedDays} elapsed days × 175)</div>
+                        <strong style="font-size:1.3em;">OVERALL: ${adjustedTotal}/${fairMax} (${fairPercent}%)</strong>
+                        <div style="font-size:11px;opacity:0.8;margin-top:4px;">Based on ${elapsedDays} elapsed days × 175 pts each</div>
                     </div>
                 </div>
             </div>
