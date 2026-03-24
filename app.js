@@ -636,7 +636,7 @@ async function loadReports(userId, containerId) {
             // NR row gets a distinct light-pink tint to show penalty visually
             const rowBg = isNR ? 'background:#fff0f0;' : isFuture ? 'background:#fafafa;' : '';
 
-            // Day label: show date + pencil icon inline ONLY if entry was edited
+            // Day label: show pencil ONLY if entry was edited (not for NR)
             const editedFlag = hasBeenEdited
                 ? ' <span title="Entry was edited" style="color:#9b59b6;font-size:11px;cursor:pointer;" onclick="viewEditHistory(\''+dateStr+'\')">✏️</span>'
                 : '';
@@ -649,7 +649,7 @@ async function loadReports(userId, containerId) {
 
             tableRows += `
                 <tr style="${rowBg}">
-                    <td style="white-space:nowrap;">${dayLabel}${isNR ? '<br><span style="font-size:10px;background:#e74c3c;color:white;padding:1px 5px;border-radius:3px;font-weight:700;letter-spacing:0.5px;">NR −40</span>' : ''}</td>
+                    <td style="white-space:nowrap;">${dayLabel}</td>
                     <td style="${isNR?'color:#e74c3c;font-weight:600;':''}">${entry.sleepTime}</td>
                     <td style="background:${getScoreBackground(entry.scores?.sleep)};font-weight:bold;text-align:center;">${entry.scores?.sleep}</td>
                     <td style="${isNR?'color:#e74c3c;':''}">${entry.wakeupTime}</td>
