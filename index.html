@@ -42,8 +42,9 @@
         .comparison-table th { background: var(--secondary); color: white; font-weight: 600; }
         .comparison-table tr:hover { background: #f5f5f5; }
         .daily-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.9em; }
-        .daily-table th, .daily-table td { border: 1px solid #eee; padding: 8px; text-align: left; }
-        .daily-table th { background: #f8f9fa; font-weight: 600; }
+        .daily-table th, .daily-table td { border: 1px solid #eee; padding: 8px; text-align: center; }
+        .daily-table thead th { background: #2c3e50 !important; color: white !important; font-weight: 600; }
+        .daily-table tbody th { background: #f8f9fa; font-weight: 600; color: #2c3e50; }
         .daily-table tr:hover { background: #f9f9f9; }
         .score-positive { color: var(--success); font-weight: bold; }
         .score-negative { color: var(--danger); font-weight: bold; }
@@ -303,10 +304,11 @@
                 <!-- SADHANA REPORTS -->
                 <div id="sadhana-reports-panel">
                     <button onclick="downloadUserExcel(currentUser.uid, userProfile.name)" style="background:var(--success); margin-bottom:15px">📥 Download My History (Excel)</button>
-                    <div class="card" style="margin-bottom: 20px;">
+                    <div id="weekly-reports-container"></div>
+                    <div class="card" style="margin-top: 20px;">
+                        <h4 style="margin:0 0 10px;color:var(--primary);">📊 4-Week Trend Comparison</h4>
                         <div id="four-week-comparison" style="overflow-x: auto;"></div>
                     </div>
-                    <div id="weekly-reports-container"></div>
                 </div>
 
                 <!-- TAPAH REPORTS -->
