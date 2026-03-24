@@ -618,14 +618,13 @@ async function loadReports(userId, containerId) {
         let weekTotals = { total: 0, readingMins: 0, hearingMins: 0, notesMins: 0, notesMarks: 0, sleepMarks: 0, wakeupMarks: 0, morningMarks: 0, chantingMarks: 0, readingMarks: 0, hearingMarks: 0, daySleepMarks: 0 };
 
         let tableRows = '';
+        // First pass: accumulate totals (Sun→Sat order)
         for (let i = 0; i < 7; i++) {
             const currentDate = new Date(weekStart);
             currentDate.setDate(weekStart.getDate() + i);
             const dateStr = toLocalDateStr(currentDate);
-            const isFuture = currentDate > new Date();
             const entry = week.days[dateStr] || getNRData(dateStr);
             const isNR = !week.days[dateStr];
-            const hasBeenEdited = !isNR && entry.wasEdited === true;
 
             weekTotals.total        += entry.totalScore ?? 0;
             weekTotals.readingMins  += (entry.readingMinutes  === 'NR' ? 0 : entry.readingMinutes)  || 0;
@@ -639,6 +638,16 @@ async function loadReports(userId, containerId) {
             weekTotals.readingMarks += entry.scores?.reading  ?? 0;
             weekTotals.hearingMarks += entry.scores?.hearing  ?? 0;
             weekTotals.daySleepMarks+= entry.scores?.daySleep ?? 0;
+        }
+        // Second pass: render rows newest-day-first (Sat→Sun = i from 6 down to 0)
+        for (let i = 6; i >= 0; i--) {
+            const currentDate = new Date(weekStart);
+            currentDate.setDate(weekStart.getDate() + i);
+            const dateStr = toLocalDateStr(currentDate);
+            const isFuture = currentDate > new Date();
+            const entry = week.days[dateStr] || getNRData(dateStr);
+            const isNR = !week.days[dateStr];
+            const hasBeenEdited = !isNR && entry.wasEdited === true;
 
             const dayPercent = entry.dayPercent ?? -23;
             const isPast = !isFuture && !isNR;
@@ -648,7 +657,7 @@ async function loadReports(userId, containerId) {
             if (isFuture) {
                 pfBadge = '<span style="font-size:10px;color:#bbb;">—</span>';
             } else if (isNR) {
-                pfBadge = '<span style="display:inline-block;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;background:#fde8e8;color:#e74c3c;border:1px solid #f5c6c6;">NR</span>';
+                pfBadge = '<span style="display:inline-block;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;background:#fde8e8;color:#e74c3c;border:1px solid #f5c6c6;">Fail</span>';
             } else if (dayPercent >= 50) {
                 pfBadge = '<span style="display:inline-block;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;background:#e8f8f0;color:#27ae60;border:1px solid #a9dfbf;">Pass</span>';
             } else {
@@ -961,6 +970,7 @@ let _currentActivityTotals = null;
 
 async function generateDailyCharts() {
     const today = new Date();
+    const todayStr = toLocalDateStr(today);
     const dates = [];
     for (let i = 27; i >= 0; i--) {
         const d = new Date(today);
@@ -979,29 +989,36 @@ async function generateDailyCharts() {
     snapshot.forEach(doc => { data[doc.id] = doc.data(); });
 
     const labels = dates.map(d => new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }));
-    const scores = dates.map(d => (data[d] !== undefined ? (data[d].totalScore ?? null) : null));
+    // NR past days = -40 shown on chart; today unfilled = null (gap, no penalty yet)
+    const scores = dates.map(d => {
+        if (data[d] !== undefined) return data[d].totalScore ?? null;
+        if (d === todayStr) return null;
+        return -40;
+    });
 
-    // Activity-wise total marks (sum across all 28 days)
+    // Activity totals: NR past days contribute penalty scores (same as getNRData)
+    const NR_SCORES = { sleep: -5, wakeup: -5, morningProgram: -5, chanting: -5, reading: -5, hearing: -5, notes: -5, daySleep: 0 };
+    const getS = (d, key) => data[d] ? (data[d]?.scores?.[key] || 0) : (d === todayStr ? 0 : NR_SCORES[key]);
     _currentActivityTotals = {
-        Sleep:           dates.reduce((s, d) => s + (data[d]?.scores?.sleep || 0), 0),
-        'Wake-up':       dates.reduce((s, d) => s + (data[d]?.scores?.wakeup || 0), 0),
-        'Morning Prog.': dates.reduce((s, d) => s + (data[d]?.scores?.morningProgram || 0), 0),
-        Chanting:        dates.reduce((s, d) => s + (data[d]?.scores?.chanting || 0), 0),
-        Reading:         dates.reduce((s, d) => s + (data[d]?.scores?.reading || 0), 0),
-        Hearing:         dates.reduce((s, d) => s + (data[d]?.scores?.hearing || 0), 0),
-        'Notes Rev.':    dates.reduce((s, d) => s + (data[d]?.scores?.notes || 0), 0),
-        'Day Sleep':     dates.reduce((s, d) => s + (data[d]?.scores?.daySleep || 0), 0),
+        Sleep:           dates.reduce((s, d) => s + getS(d, 'sleep'), 0),
+        'Wake-up':       dates.reduce((s, d) => s + getS(d, 'wakeup'), 0),
+        'Morning Prog.': dates.reduce((s, d) => s + getS(d, 'morningProgram'), 0),
+        Chanting:        dates.reduce((s, d) => s + getS(d, 'chanting'), 0),
+        Reading:         dates.reduce((s, d) => s + getS(d, 'reading'), 0),
+        Hearing:         dates.reduce((s, d) => s + getS(d, 'hearing'), 0),
+        'Notes Rev.':    dates.reduce((s, d) => s + getS(d, 'notes'), 0),
+        'Day Sleep':     dates.reduce((s, d) => s + getS(d, 'daySleep'), 0),
     };
 
-    // Ring: based on days with data only (fair)
-    const submittedDays = dates.filter(d => data[d]).length;
-    const maxPossible = submittedDays * 175;
-    const totalEarned = scores.filter(s => s !== null).reduce((a, b) => a + b, 0);
+    // Ring: include NR past days at -40, exclude today if not yet filled
+    const datesForRing = dates.filter(d => d !== todayStr || data[d]);
+    const totalEarned = datesForRing.reduce((s, d) => s + (data[d] ? (data[d].totalScore ?? 0) : -40), 0);
+    const maxPossible = datesForRing.length * 175;
     const fairPercent = maxPossible > 0 ? Math.round((totalEarned / maxPossible) * 100) : 0;
 
     const ringContainer = document.getElementById('score-ring-container');
-    if (ringContainer) ringContainer.style.display = submittedDays > 0 ? 'block' : 'none';
-    if (submittedDays > 0) renderScoreRing(fairPercent, `${dates[0].slice(5).replace('-','/')} – ${dates[27].slice(5).replace('-','/')}`, submittedDays, totalEarned);
+    if (ringContainer) ringContainer.style.display = datesForRing.length > 0 ? 'block' : 'none';
+    if (datesForRing.length > 0) renderScoreRing(fairPercent, `${dates[0].slice(5).replace('-','/')} – ${dates[27].slice(5).replace('-','/')}`, datesForRing.length, totalEarned);
 
     renderScoreLineChart(labels, scores);
     renderActivityBarChart(_currentActivityTotals);
