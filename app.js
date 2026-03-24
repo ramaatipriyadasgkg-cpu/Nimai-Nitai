@@ -376,7 +376,8 @@ if (sadhanaForm) {
                 scores: sc,
                 totalScore: total,
                 dayPercent: dayPercent,
-                submittedAt: firebase.firestore.FieldValue.serverTimestamp()
+                submittedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                wasEdited: editingDate !== null ? true : (false)
             });
 
             const isEdit = editingDate !== null;
@@ -608,7 +609,8 @@ async function loadReports(userId, containerId) {
             const isFuture = currentDate > new Date();
             const entry = week.days[dateStr] || getNRData(dateStr);
             const isNR = !week.days[dateStr];
-            const hasBeenEdited = !isNR && entry.editHistory && entry.editHistory.length > 0;
+            // Use wasEdited field (a plain boolean on the doc) — subcollection check not needed
+            const hasBeenEdited = !isNR && entry.wasEdited === true;
 
             // NR days carry FULL -40 penalty — correctly included via entry.totalScore = -40
             weekTotals.total += entry.totalScore ?? 0;
@@ -634,19 +636,20 @@ async function loadReports(userId, containerId) {
             // NR row gets a distinct light-pink tint to show penalty visually
             const rowBg = isNR ? 'background:#fff0f0;' : isFuture ? 'background:#fafafa;' : '';
 
-            // Day label: pencil icon if entry was ever edited
-            const editedFlag = hasBeenEdited ? ' <span title="Entry was edited" style="color:#9b59b6;font-size:12px;">✏️</span>' : '';
+            // Day label: show date + pencil icon inline ONLY if entry was edited
+            const editedFlag = hasBeenEdited
+                ? ' <span title="Entry was edited" style="color:#9b59b6;font-size:11px;cursor:pointer;" onclick="viewEditHistory(\''+dateStr+'\')">✏️</span>'
+                : '';
             const dayLabel = `<strong>${dayNames[i]} ${currentDate.getDate()}${editedFlag}</strong>`;
 
-            // Fill/Edit action button — moved to last column
+            // Last-column action: NR shows green "+ Fill", filled shows just pencil icon button
             const actionBtn = isNR
-                ? `<button onclick="editEntry('${dateStr}')" style="padding:3px 10px;font-size:11px;background:#27ae60;color:white;width:auto;margin:0;border-radius:4px;border:none;cursor:pointer;">+ Fill</button>`
-                : `<button onclick="editEntry('${dateStr}')" style="padding:3px 10px;font-size:11px;background:#3498db;color:white;width:auto;margin:0 0 2px 0;border-radius:4px;border:none;cursor:pointer;display:block;">✏️ Edit</button>
-                   <button onclick="viewEditHistory('${dateStr}')" style="padding:3px 10px;font-size:11px;background:#9b59b6;color:white;width:auto;margin:0;border-radius:4px;border:none;cursor:pointer;display:block;">🕓</button>`;
+                ? `<button onclick="editEntry('${dateStr}')" title="Fill this entry" style="padding:4px 10px;font-size:11px;background:#27ae60;color:white;width:auto;margin:0;border-radius:4px;border:none;cursor:pointer;">+ Fill</button>`
+                : `<button onclick="editEntry('${dateStr}')" title="Edit entry" style="padding:4px 8px;font-size:14px;background:transparent;color:#3498db;width:auto;margin:0;border:none;cursor:pointer;line-height:1;">✏️</button>`;
 
             tableRows += `
                 <tr style="${rowBg}">
-                    <td style="white-space:nowrap;">${dayLabel}</td>
+                    <td style="white-space:nowrap;">${dayLabel}${isNR ? '<br><span style="font-size:10px;background:#e74c3c;color:white;padding:1px 5px;border-radius:3px;font-weight:700;letter-spacing:0.5px;">NR −40</span>' : ''}</td>
                     <td style="${isNR?'color:#e74c3c;font-weight:600;':''}">${entry.sleepTime}</td>
                     <td style="background:${getScoreBackground(entry.scores?.sleep)};font-weight:bold;text-align:center;">${entry.scores?.sleep}</td>
                     <td style="${isNR?'color:#e74c3c;':''}">${entry.wakeupTime}</td>
