@@ -539,14 +539,33 @@ window.viewEditHistory = async (dateStr) => {
         </div>`;
 };
 
-// --- SCORE BACKGROUND ---
+// --- SCORE CELL RENDERER ---
+// Returns {bg, color, text} matching the reference design:
+//   25 (max)  → plain bg, green bold text
+//   10–20     → light yellow bg, orange text
+//   0–9       → light yellow bg, muted text
+//   negative  → light red bg, red text in parentheses
+//   null/NR   → light red bg, red text in parentheses
+function scoreCell(score, isNR) {
+    if (isNR || score === null || score === undefined) {
+        return { bg: '#fde8e8', color: '#e74c3c', text: `(${score ?? -5})` };
+    }
+    if (score >= 25) return { bg: 'transparent', color: '#27ae60', text: String(score) };
+    if (score > 0)   return { bg: '#fffde7',     color: '#f39c12', text: String(score) };
+    if (score === 0) return { bg: '#fffde7',     color: '#888',    text: '0' };
+    return { bg: '#fde8e8', color: '#e74c3c', text: `(${score})` };
+}
+function renderScoreCell(score, isNR) {
+    const s = scoreCell(score, isNR);
+    return `<td style="background:${s.bg};color:${s.color};font-weight:700;text-align:center;padding:7px 5px;">${s.text}</td>`;
+}
+// Legacy wrapper kept for any remaining callers
 function getScoreBackground(score) {
-    if (score === null || score === undefined) return '#ffcdd2';
-    if (score >= 20) return '#c8e6c9';
-    if (score >= 15) return '#fff9c4';
-    if (score >= 10) return '#ffe0b2';
-    if (score >= 0) return '#ffebee';
-    return '#ffcdd2';
+    if (score === null || score === undefined) return '#fde8e8';
+    if (score >= 25) return 'transparent';
+    if (score > 0)   return '#fffde7';
+    if (score === 0) return '#fffde7';
+    return '#fde8e8';
 }
 
 // --- 8. REPORTS ---
@@ -599,9 +618,6 @@ async function loadReports(userId, containerId) {
         let weekTotals = { total: 0, readingMins: 0, hearingMins: 0, notesMins: 0, notesMarks: 0, sleepMarks: 0, wakeupMarks: 0, morningMarks: 0, chantingMarks: 0, readingMarks: 0, hearingMarks: 0, daySleepMarks: 0 };
 
         let tableRows = '';
-        // Collect which dates have been edited (have editHistory) — check via editHistory field count
-        // We'll mark dates as edited if they have editHistory subcollection data
-        // For now we track via a simple flag — editHistory is written on update
         for (let i = 0; i < 7; i++) {
             const currentDate = new Date(weekStart);
             currentDate.setDate(weekStart.getDate() + i);
@@ -609,15 +625,12 @@ async function loadReports(userId, containerId) {
             const isFuture = currentDate > new Date();
             const entry = week.days[dateStr] || getNRData(dateStr);
             const isNR = !week.days[dateStr];
-            // Use wasEdited field (a plain boolean on the doc) — subcollection check not needed
             const hasBeenEdited = !isNR && entry.wasEdited === true;
 
-            // NR days carry FULL -40 penalty — correctly included via entry.totalScore = -40
-            weekTotals.total += entry.totalScore ?? 0;
+            weekTotals.total        += entry.totalScore ?? 0;
             weekTotals.readingMins  += (entry.readingMinutes  === 'NR' ? 0 : entry.readingMinutes)  || 0;
             weekTotals.hearingMins  += (entry.hearingMinutes  === 'NR' ? 0 : entry.hearingMinutes)  || 0;
             weekTotals.notesMins    += (entry.notesMinutes    === 'NR' ? 0 : entry.notesMinutes)    || 0;
-            // Use actual score values (NR scores are already -5 from getNRData)
             weekTotals.notesMarks   += entry.scores?.notes    ?? 0;
             weekTotals.sleepMarks   += entry.scores?.sleep    ?? 0;
             weekTotals.wakeupMarks  += entry.scores?.wakeup   ?? 0;
@@ -628,46 +641,66 @@ async function loadReports(userId, containerId) {
             weekTotals.daySleepMarks+= entry.scores?.daySleep ?? 0;
 
             const dayPercent = entry.dayPercent ?? -23;
-            const percentColor = dayPercent >= 70 ? '#27ae60' : dayPercent >= 50 ? '#f39c12' : '#e74c3c';
-            const mpDisplay = entry.morningProgramTime === 'Not Done'
-                ? '<span style="color:#e74c3c;font-size:0.85em;">✗ Not Done</span>'
-                : (entry.morningProgramTime || 'NR');
+            const isPast = !isFuture && !isNR;
 
-            // NR row gets a distinct light-pink tint to show penalty visually
-            const rowBg = isNR ? 'background:#fff0f0;' : isFuture ? 'background:#fafafa;' : '';
+            // Pass/Fail badge — only for past filled entries
+            let pfBadge = '';
+            if (isFuture) {
+                pfBadge = '<span style="font-size:10px;color:#bbb;">—</span>';
+            } else if (isNR) {
+                pfBadge = '<span style="display:inline-block;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;background:#fde8e8;color:#e74c3c;border:1px solid #f5c6c6;">NR</span>';
+            } else if (dayPercent >= 50) {
+                pfBadge = '<span style="display:inline-block;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;background:#e8f8f0;color:#27ae60;border:1px solid #a9dfbf;">Pass</span>';
+            } else {
+                pfBadge = '<span style="display:inline-block;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;background:#fde8e8;color:#e74c3c;border:1px solid #f5c6c6;">Fail</span>';
+            }
 
-            // Day label: show pencil ONLY if entry was edited (not for NR)
+            // Date label with optional edit history pencil
             const editedFlag = hasBeenEdited
-                ? ' <span title="Entry was edited" style="color:#9b59b6;font-size:11px;cursor:pointer;" onclick="viewEditHistory(\''+dateStr+'\')">✏️</span>'
+                ? ` <span title="Entry was edited" style="color:#9b59b6;font-size:10px;cursor:pointer;" onclick="viewEditHistory('${dateStr}')">✏️</span>`
                 : '';
-            const dayLabel = `<strong>${dayNames[i]} ${currentDate.getDate()}${editedFlag}</strong>`;
+            const dateLabel = `<strong>${String(currentDate.getDate()).padStart(2,'0')}/${String(currentDate.getMonth()+1).padStart(2,'0')}${editedFlag}</strong>`;
 
-            // Last-column action: NR shows green "+ Fill", filled shows just pencil icon button
+            // Action button
             const actionBtn = isNR
-                ? `<button onclick="editEntry('${dateStr}')" title="Fill this entry" style="padding:4px 10px;font-size:11px;background:#27ae60;color:white;width:auto;margin:0;border-radius:4px;border:none;cursor:pointer;">+ Fill</button>`
-                : `<button onclick="editEntry('${dateStr}')" title="Edit entry" style="padding:4px 8px;font-size:14px;background:transparent;color:#3498db;width:auto;margin:0;border:none;cursor:pointer;line-height:1;">✏️</button>`;
+                ? `<button onclick="editEntry('${dateStr}')" style="padding:3px 9px;font-size:11px;background:#27ae60;color:white;width:auto;margin:0;border-radius:12px;border:none;cursor:pointer;font-weight:600;">+ Fill</button>`
+                : `<button onclick="editEntry('${dateStr}')" title="Edit entry" style="padding:3px 8px;font-size:13px;background:transparent;color:#3498db;width:auto;margin:0;border:none;cursor:pointer;">✏️</button>`;
+
+            // Value display helpers
+            const tv = (val) => (val === 'NR' || val === undefined || val === null) ? '<span style="color:#e74c3c;font-weight:600;">NR</span>' : val;
+            const mv = (mins) => (mins === 'NR' || mins === undefined || mins === null) ? '<span style="color:#e74c3c;">NR</span>' : `${mins}m`;
+            const mpVal = entry.morningProgramTime === 'Not Done'
+                ? '<span style="color:#e74c3c;font-size:0.85em;">✗ ND</span>'
+                : tv(entry.morningProgramTime);
+            const dsVal = entry.daySleepMinutes === 'NR' ? '<span style="color:#e74c3c;">NR</span>' : `${entry.daySleepMinutes ?? 0}m`;
+
+            // Day % cell
+            const pctColor = dayPercent >= 70 ? '#27ae60' : dayPercent >= 50 ? '#f39c12' : '#e74c3c';
+            const pctBg    = dayPercent >= 50 ? '#f0fff4' : '#fff0f0';
+            const rowBg    = isNR ? 'background:#fff8f8;' : isFuture ? 'background:#fafafa;' : '';
 
             tableRows += `
-                <tr style="${rowBg}">
-                    <td style="white-space:nowrap;">${dayLabel}</td>
-                    <td style="${isNR?'color:#e74c3c;font-weight:600;':''}">${entry.sleepTime}</td>
-                    <td style="background:${getScoreBackground(entry.scores?.sleep)};font-weight:bold;text-align:center;">${entry.scores?.sleep}</td>
-                    <td style="${isNR?'color:#e74c3c;':''}">${entry.wakeupTime}</td>
-                    <td style="background:${getScoreBackground(entry.scores?.wakeup)};font-weight:bold;text-align:center;">${entry.scores?.wakeup}</td>
-                    <td style="${isNR?'color:#e74c3c;':''}">${entry.chantingTime}</td>
-                    <td style="background:${getScoreBackground(entry.scores?.chanting)};font-weight:bold;text-align:center;">${entry.scores?.chanting}</td>
-                    <td>${mpDisplay}</td>
-                    <td style="background:${getScoreBackground(entry.scores?.morningProgram)};font-weight:bold;text-align:center;">${entry.scores?.morningProgram ?? 0}</td>
-                    <td style="${isNR?'color:#e74c3c;':''}">${entry.daySleepMinutes !== 'NR' ? entry.daySleepMinutes : 'NR'}</td>
-                    <td style="background:${getScoreBackground(entry.scores?.daySleep)};font-weight:bold;text-align:center;">${entry.scores?.daySleep}</td>
-                    <td style="${isNR?'color:#e74c3c;':''}">${entry.readingMinutes !== 'NR' ? entry.readingMinutes : 'NR'}</td>
-                    <td style="background:${getScoreBackground(entry.scores?.reading)};font-weight:bold;text-align:center;">${entry.scores?.reading}</td>
-                    <td style="${isNR?'color:#e74c3c;':''}">${entry.hearingMinutes !== 'NR' ? entry.hearingMinutes : 'NR'}</td>
-                    <td style="background:${getScoreBackground(entry.scores?.hearing)};font-weight:bold;text-align:center;">${entry.scores?.hearing}</td>
-                    <td style="${isNR?'color:#e74c3c;':''}">${entry.notesMinutes !== 'NR' ? entry.notesMinutes : 'NR'}</td>
-                    <td style="background:${getScoreBackground(entry.scores?.notes)};font-weight:bold;text-align:center;">${entry.scores?.notes}</td>
-                    <td style="color:${percentColor};font-weight:bold;text-align:center;">${dayPercent}%</td>
-                    <td style="text-align:center;white-space:nowrap;">${actionBtn}</td>
+                <tr style="${rowBg}border-bottom:1px solid #f0f0f0;">
+                    <td style="text-align:center;padding:7px 5px;">${pfBadge}</td>
+                    <td style="white-space:nowrap;padding:7px 8px;font-size:13px;">${dateLabel}</td>
+                    <td style="padding:7px 6px;font-size:12px;white-space:nowrap;color:${isNR?'#e74c3c':'#333'};">${tv(entry.sleepTime)}</td>
+                    ${renderScoreCell(entry.scores?.sleep, isNR)}
+                    <td style="padding:7px 6px;font-size:12px;white-space:nowrap;color:${isNR?'#e74c3c':'#333'};">${tv(entry.wakeupTime)}</td>
+                    ${renderScoreCell(entry.scores?.wakeup, isNR)}
+                    <td style="padding:7px 6px;font-size:12px;white-space:nowrap;color:${isNR?'#e74c3c':'#333'};">${tv(entry.chantingTime)}</td>
+                    ${renderScoreCell(entry.scores?.chanting, isNR)}
+                    <td style="padding:7px 6px;font-size:12px;white-space:nowrap;">${mpVal}</td>
+                    ${renderScoreCell(entry.scores?.morningProgram, isNR)}
+                    <td style="padding:7px 6px;font-size:12px;text-align:center;">${dsVal}</td>
+                    ${renderScoreCell(entry.scores?.daySleep, isNR)}
+                    <td style="padding:7px 6px;font-size:12px;text-align:center;">${mv(entry.readingMinutes)}</td>
+                    ${renderScoreCell(entry.scores?.reading, isNR)}
+                    <td style="padding:7px 6px;font-size:12px;text-align:center;">${mv(entry.hearingMinutes)}</td>
+                    ${renderScoreCell(entry.scores?.hearing, isNR)}
+                    <td style="padding:7px 6px;font-size:12px;text-align:center;">${mv(entry.notesMinutes)}</td>
+                    ${renderScoreCell(entry.scores?.notes, isNR)}
+                    <td style="background:${pctBg};color:${pctColor};font-weight:700;text-align:center;padding:7px 5px;font-size:12px;">${dayPercent}%</td>
+                    <td style="text-align:center;padding:5px;white-space:nowrap;">${actionBtn}</td>
                 </tr>
             `;
         }
@@ -675,7 +708,6 @@ async function loadReports(userId, containerId) {
         let adjustedNotesMarks = weekTotals.notesMarks;
         if (weekTotals.notesMins >= 245) adjustedNotesMarks = 175;
         const adjustedTotal = weekTotals.total - weekTotals.notesMarks + adjustedNotesMarks;
-        // Fair denominator: count only past days (not future days in current week)
         let elapsedDays = 0;
         for (let i = 0; i < 7; i++) {
             const d = new Date(weekStart); d.setDate(weekStart.getDate() + i);
@@ -687,73 +719,93 @@ async function loadReports(userId, containerId) {
         const fairPercent = fairMax > 0 ? Math.round((adjustedTotal / fairMax) * 100) : 0;
         const weekClass = adjustedTotal < 735 ? 'low-score' : '';
 
+        // Total row score cell helper (no isNR, uses total value)
+        const totCell = (val, max) => {
+            const bg = val < 0 ? '#fde8e8' : val >= max * 0.7 ? '#e8f8f0' : '#fffde7';
+            const cl = val < 0 ? '#e74c3c' : val >= max * 0.7 ? '#27ae60' : '#f39c12';
+            const txt = val < 0 ? `(${val})` : String(val);
+            return `<td style="background:${bg};color:${cl};font-weight:700;text-align:center;padding:7px 5px;">${txt}</td>`;
+        };
+        const pctCell = (val, max) => {
+            const pct = max > 0 ? Math.round((val/max)*100) : 0;
+            const bg = pct < 0 ? '#fde8e8' : pct >= 70 ? '#e8f8f0' : '#fffde7';
+            const cl = pct < 0 ? '#e74c3c' : pct >= 70 ? '#27ae60' : '#f39c12';
+            return `<td colspan="2" style="background:${bg};color:${cl};font-weight:700;text-align:center;padding:6px 4px;font-size:12px;">${pct}%</td>`;
+        };
+
         html += `
             <div class="week-card ${weekClass}">
                 <div class="week-header" onclick="this.nextElementSibling.classList.toggle('expanded'); this.querySelector('.toggle-icon').textContent = this.nextElementSibling.classList.contains('expanded') ? '▼' : '▶';">
-                    <span>${week.label.split('_')[0]}</span>
-                    <span>${adjustedTotal}/${fairMax} (${fairPercent}%) <span class="toggle-icon">▶</span></span>
+                    <span>📅 ${week.label.split('_')[0]}</span>
+                    <span style="color:${fairPercent>=50?'#27ae60':'#e74c3c'};">${adjustedTotal}/${fairMax} (${fairPercent}%) <span class="toggle-icon">▶</span></span>
                 </div>
                 <div class="week-content">
                     <div style="overflow-x:auto;">
-                    <table class="daily-table">
+                    <table class="daily-table" style="font-size:13px;">
                         <thead>
-                            <tr style="background:#2c3e50;color:white;">
-                                <th style="padding:8px 6px;white-space:nowrap;">Day</th>
-                                <th style="padding:8px 6px;white-space:nowrap;">Bed Time</th>
-                                <th style="padding:8px 4px;text-align:center;">Mks</th>
-                                <th style="padding:8px 6px;white-space:nowrap;">Wake Up</th>
-                                <th style="padding:8px 4px;text-align:center;">Mks</th>
-                                <th style="padding:8px 6px;white-space:nowrap;">Japa</th>
-                                <th style="padding:8px 4px;text-align:center;">Mks</th>
-                                <th style="padding:8px 6px;white-space:nowrap;">Morn. Prog</th>
-                                <th style="padding:8px 4px;text-align:center;">Mks</th>
-                                <th style="padding:8px 6px;white-space:nowrap;">Day Sleep</th>
-                                <th style="padding:8px 4px;text-align:center;">Mks</th>
-                                <th style="padding:8px 6px;white-space:nowrap;">Pathan</th>
-                                <th style="padding:8px 4px;text-align:center;">Mks</th>
-                                <th style="padding:8px 6px;white-space:nowrap;">Sarwan</th>
-                                <th style="padding:8px 4px;text-align:center;">Mks</th>
-                                <th style="padding:8px 6px;white-space:nowrap;">Notes Rev.</th>
-                                <th style="padding:8px 4px;text-align:center;">Mks</th>
-                                <th style="padding:8px 4px;text-align:center;white-space:nowrap;">Day %</th>
-                                <th style="padding:8px 6px;text-align:center;">Action</th>
+                            <tr style="background:#2c3e50;color:white;font-size:12px;">
+                                <th style="padding:8px 5px;text-align:center;min-width:44px;">P/F</th>
+                                <th style="padding:8px 6px;white-space:nowrap;min-width:52px;">Date</th>
+                                <th style="padding:8px 6px;white-space:nowrap;">Bed</th>
+                                <th style="padding:8px 4px;text-align:center;min-width:32px;">M</th>
+                                <th style="padding:8px 6px;white-space:nowrap;">Wake</th>
+                                <th style="padding:8px 4px;text-align:center;min-width:32px;">M</th>
+                                <th style="padding:8px 6px;white-space:nowrap;">Chant</th>
+                                <th style="padding:8px 4px;text-align:center;min-width:32px;">M</th>
+                                <th style="padding:8px 6px;white-space:nowrap;">Morn.Prog</th>
+                                <th style="padding:8px 4px;text-align:center;min-width:32px;">M</th>
+                                <th style="padding:8px 4px;text-align:center;white-space:nowrap;">DS</th>
+                                <th style="padding:8px 4px;text-align:center;min-width:32px;">M</th>
+                                <th style="padding:8px 4px;text-align:center;white-space:nowrap;">Read</th>
+                                <th style="padding:8px 4px;text-align:center;min-width:32px;">M</th>
+                                <th style="padding:8px 4px;text-align:center;white-space:nowrap;">Hear</th>
+                                <th style="padding:8px 4px;text-align:center;min-width:32px;">M</th>
+                                <th style="padding:8px 4px;text-align:center;white-space:nowrap;">Notes</th>
+                                <th style="padding:8px 4px;text-align:center;min-width:32px;">M</th>
+                                <th style="padding:8px 4px;text-align:center;min-width:44px;">Day%</th>
+                                <th style="padding:8px 6px;text-align:center;min-width:44px;">Edit</th>
                             </tr>
                         </thead>
                         <tbody>
                             ${tableRows}
-                            <tr style="background:#f0f4ff;font-weight:bold;">
-                                <td style="white-space:nowrap;">Total</td><td>—</td>
-                                <td style="background:${weekTotals.sleepMarks < 0 ? '#ffcdd2' : 'lightgreen'};text-align:center;">${weekTotals.sleepMarks}</td><td>—</td>
-                                <td style="background:${weekTotals.wakeupMarks < 0 ? '#ffcdd2' : 'lightgreen'};text-align:center;">${weekTotals.wakeupMarks}</td><td>—</td>
-                                <td style="background:${weekTotals.chantingMarks < 0 ? '#ffcdd2' : 'lightgreen'};text-align:center;">${weekTotals.chantingMarks}</td><td>—</td>
-                                <td style="background:${weekTotals.morningMarks < 0 ? '#ffcdd2' : 'lightgreen'};text-align:center;">${weekTotals.morningMarks}</td><td>—</td>
-                                <td style="background:${weekTotals.daySleepMarks < 0 ? '#ffcdd2' : 'lightgreen'};text-align:center;">${weekTotals.daySleepMarks}</td>
-                                <td style="text-align:center;">${weekTotals.readingMins}</td>
-                                <td style="background:${weekTotals.readingMarks < 0 ? '#ffcdd2' : 'lightgreen'};text-align:center;">${weekTotals.readingMarks}</td>
-                                <td style="text-align:center;">${weekTotals.hearingMins}</td>
-                                <td style="background:${weekTotals.hearingMarks < 0 ? '#ffcdd2' : 'lightgreen'};text-align:center;">${weekTotals.hearingMarks}</td>
-                                <td style="text-align:center;">${weekTotals.notesMins}</td>
-                                <td style="background:${adjustedNotesMarks < 0 ? '#ffcdd2' : 'lightgreen'};text-align:center;">${adjustedNotesMarks}</td>
-                                <td>—</td><td>—</td>
+                            <tr style="background:#f0f4ff;font-weight:bold;font-size:12px;">
+                                <td colspan="2" style="padding:7px 8px;color:#2c3e50;">Total</td>
+                                <td style="padding:7px 4px;text-align:center;color:#888;">—</td>
+                                ${totCell(weekTotals.sleepMarks, 175)}
+                                <td style="padding:7px 4px;text-align:center;color:#888;">—</td>
+                                ${totCell(weekTotals.wakeupMarks, 175)}
+                                <td style="padding:7px 4px;text-align:center;color:#888;">—</td>
+                                ${totCell(weekTotals.chantingMarks, 175)}
+                                <td style="padding:7px 4px;text-align:center;color:#888;">—</td>
+                                ${totCell(weekTotals.morningMarks, 175)}
+                                <td style="padding:7px 4px;text-align:center;color:#888;">—</td>
+                                ${totCell(weekTotals.daySleepMarks, 70)}
+                                <td style="padding:7px 4px;text-align:center;font-size:11px;color:#555;">${weekTotals.readingMins}m</td>
+                                ${totCell(weekTotals.readingMarks, 175)}
+                                <td style="padding:7px 4px;text-align:center;font-size:11px;color:#555;">${weekTotals.hearingMins}m</td>
+                                ${totCell(weekTotals.hearingMarks, 175)}
+                                <td style="padding:7px 4px;text-align:center;font-size:11px;color:#555;">${weekTotals.notesMins}m</td>
+                                ${totCell(adjustedNotesMarks, 175)}
+                                <td colspan="2" style="padding:7px 4px;text-align:center;color:#888;">—</td>
                             </tr>
-                            <tr style="background:#e8f5e9;font-weight:bold;">
-                                <td style="white-space:nowrap;">Sadhna %</td>
-                                <td colspan="2" style="background:${weekTotals.sleepMarks<0?'#ffcdd2':'lightgreen'};text-align:center;">${Math.round((weekTotals.sleepMarks/175)*100)}%</td>
-                                <td colspan="2" style="background:${weekTotals.wakeupMarks<0?'#ffcdd2':'lightgreen'};text-align:center;">${Math.round((weekTotals.wakeupMarks/175)*100)}%</td>
-                                <td colspan="2" style="background:${weekTotals.chantingMarks<0?'#ffcdd2':'lightgreen'};text-align:center;">${Math.round((weekTotals.chantingMarks/175)*100)}%</td>
-                                <td colspan="2" style="background:${weekTotals.morningMarks<0?'#ffcdd2':'lightgreen'};text-align:center;">${Math.round((weekTotals.morningMarks/175)*100)}%</td>
-                                <td colspan="2" style="background:${weekTotals.daySleepMarks<0?'#ffcdd2':'lightgreen'};text-align:center;">${Math.round((weekTotals.daySleepMarks/70)*100)}%</td>
-                                <td colspan="2" style="background:${weekTotals.readingMarks<0?'#ffcdd2':'lightgreen'};text-align:center;">${Math.round((weekTotals.readingMarks/175)*100)}%</td>
-                                <td colspan="2" style="background:${weekTotals.hearingMarks<0?'#ffcdd2':'lightgreen'};text-align:center;">${Math.round((weekTotals.hearingMarks/175)*100)}%</td>
-                                <td colspan="2" style="background:${adjustedNotesMarks<0?'#ffcdd2':'lightgreen'};text-align:center;">${Math.round((adjustedNotesMarks/175)*100)}%</td>
-                                <td>—</td><td>—</td>
+                            <tr style="background:#e8f0fe;font-weight:bold;font-size:12px;">
+                                <td colspan="2" style="padding:6px 8px;color:#2c3e50;">Sadhna %</td>
+                                ${pctCell(weekTotals.sleepMarks, 175)}
+                                ${pctCell(weekTotals.wakeupMarks, 175)}
+                                ${pctCell(weekTotals.chantingMarks, 175)}
+                                ${pctCell(weekTotals.morningMarks, 175)}
+                                ${pctCell(weekTotals.daySleepMarks, 70)}
+                                ${pctCell(weekTotals.readingMarks, 175)}
+                                ${pctCell(weekTotals.hearingMarks, 175)}
+                                ${pctCell(adjustedNotesMarks, 175)}
+                                <td colspan="2" style="padding:6px 4px;text-align:center;color:#888;">—</td>
                             </tr>
                         </tbody>
                     </table>
                     </div>
-                    <div style="margin-top:15px;padding:15px;background:var(--secondary);color:white;border-radius:8px;text-align:center;">
-                        <strong style="font-size:1.3em;">OVERALL: ${adjustedTotal}/${fairMax} (${fairPercent}%)</strong>
-                        <div style="font-size:11px;opacity:0.8;margin-top:4px;">Based on ${elapsedDays} elapsed days × 175 pts each</div>
+                    <div style="margin-top:12px;padding:12px 16px;background:${fairPercent>=50?'#27ae60':'#e74c3c'};color:white;border-radius:8px;text-align:center;">
+                        <strong style="font-size:1.2em;">OVERALL: ${adjustedTotal}/${fairMax} (${fairPercent}%)</strong>
+                        <div style="font-size:11px;opacity:0.85;margin-top:3px;">Based on ${elapsedDays} elapsed days × 175 pts each</div>
                     </div>
                 </div>
             </div>
