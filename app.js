@@ -202,6 +202,7 @@ auth.onAuthStateChanged(async (user) => {
             document.getElementById('user-display-name').textContent = userProfile.name;
             loadProfilePic();
             setupDateSelect();
+            _reportsLoading = false; // always reset on fresh login
             loadReports(currentUser.uid, 'weekly-reports-container');
         }
     } else {
@@ -286,6 +287,7 @@ window.toggleMorningProgram = (notDone) => {
     const timeRow = document.getElementById('mp-time-row');
     const mpDoneBtn = document.getElementById('mp-done-btn');
     const mpNoBtn = document.getElementById('mp-no-btn');
+    if (!timeRow || !mpDoneBtn || !mpNoBtn) return; // guard: elements not in DOM yet
     if (notDone) {
         timeRow.style.display = 'none';
         mpDoneBtn.classList.remove('mp-active');
@@ -298,7 +300,8 @@ window.toggleMorningProgram = (notDone) => {
 };
 
 function isMorningProgramNotDone() {
-    return document.getElementById('mp-no-btn').classList.contains('mp-active');
+    const btn = document.getElementById('mp-no-btn');
+    return btn ? btn.classList.contains('mp-active') : false;
 }
 
 // --- BED TIME WARNING MODAL ---
@@ -521,9 +524,10 @@ function cancelEdit() {
     if (banner) banner.style.display = 'none';
     const submitBtn = document.getElementById('sadhana-submit-btn');
     if (submitBtn) submitBtn.textContent = '✅ Submit Sadhana';
-    // Reset morning program to default state — null guard for safety
+    // Null-guard: elements may not exist yet on first load / mobile slow render
+    const mpNoBtn = document.getElementById('mp-no-btn');
     const mpTimeEl = document.getElementById('morning-program-time');
-    if (mpTimeEl) {
+    if (mpNoBtn && mpTimeEl) {
         toggleMorningProgram(false);
         mpTimeEl.value = '';
     }
@@ -645,7 +649,7 @@ async function loadReports(userId, containerId) {
     if (_reportsLoading) return;
     _reportsLoading = true;
     const container = document.getElementById(containerId);
-    if (!container) return; // Guard: element may not exist on this page
+    if (!container) { _reportsLoading = false; return; } // Guard: always reset flag
 
     // Show loading state immediately — critical for mobile on slow connections
     container.innerHTML = `
@@ -1492,7 +1496,12 @@ function resetTapahForm() {
     const doneScreen = document.getElementById('tapah-done-screen');
     if (doneScreen) doneScreen.style.display = 'none';
     const card = document.getElementById('tapah-card');
-    if (card) card.style.display = 'block';
+    if (card) {
+        card.style.display = 'block';
+        card.style.opacity = '1';
+        card.style.transform = 'none';
+        card.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
+    }
     renderFlashCard(0);
     updateTapahTotals();
 }
@@ -1519,8 +1528,11 @@ function renderFlashCard(idx) {
     const q = ALL_TAPAH_QUESTIONS[idx];
     if (!q) return;
 
-    const isAnukul = q.section === 'anukul';
+    // If key elements aren't in the DOM yet, bail silently
     const counter = document.getElementById('tapah-card-counter');
+    if (!counter) return;
+
+    const isAnukul = q.section === 'anukul';
     const badge = document.getElementById('tapah-section-badge');
     const questionEl = document.getElementById('tapah-card-question');
     const metaEl = document.getElementById('tapah-card-meta');
@@ -1600,27 +1612,26 @@ window.tapahFlashAnswer = (val) => {
     setTimeout(() => {
         const next = _flashCardIndex + 1;
         if (next < ALL_TAPAH_QUESTIONS.length) {
-            // Slide out then in
             const card = document.getElementById('tapah-card');
-            if (card) { card.style.opacity = '0'; card.style.transform = 'translateX(-30px)'; }
+            // Fade out
+            if (card) { card.style.opacity = '0'; card.style.transform = 'translateX(-20px)'; }
             setTimeout(() => {
                 _flashCardIndex = next;
                 renderFlashCard(next);
+                // Reset position instantly (no transition) then fade in
                 if (card) {
-                    card.style.transform = 'translateX(30px)';
-                    requestAnimationFrame(() => {
-                        card.style.transition = 'none';
-                        card.style.opacity = '0';
-                        requestAnimationFrame(() => {
-                            card.style.transition = 'opacity 0.25s, transform 0.25s';
-                            card.style.opacity = '1';
-                            card.style.transform = 'translateX(0)';
-                        });
-                    });
+                    card.style.transition = 'none';
+                    card.style.transform = 'translateX(20px)';
+                    card.style.opacity = '0';
+                    // Use setTimeout(0) instead of rAF — more reliable on mobile
+                    setTimeout(() => {
+                        card.style.transition = 'opacity 0.25s ease, transform 0.25s ease';
+                        card.style.opacity = '1';
+                        card.style.transform = 'translateX(0)';
+                    }, 20);
                 }
-            }, 200);
+            }, 220);
         } else {
-            // All done — show done screen
             showTapahDoneScreen();
         }
     }, 600);
