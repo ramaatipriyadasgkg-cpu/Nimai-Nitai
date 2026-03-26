@@ -687,17 +687,8 @@ async function loadReports(userId, containerId) {
             const dateStr = toLocalDateStr(currentDate);
             const isFuture = currentDate > todayStart;
 
-            // Future days — show a clean placeholder row, no NR, no Fill button
-            if (isFuture) {
-                const dateLabel = `<strong>${String(currentDate.getDate()).padStart(2,'0')}/${String(currentDate.getMonth()+1).padStart(2,'0')}</strong>`;
-                tableRows += `
-                    <tr style="background:#f9fafb;opacity:0.55;border-bottom:1px solid #f0f0f0;">
-                        <td style="text-align:center;padding:7px 5px;"><span style="font-size:10px;color:#bbb;">—</span></td>
-                        <td style="white-space:nowrap;padding:7px 8px;font-size:13px;color:#bbb;">${dateLabel}</td>
-                        <td colspan="18" style="text-align:center;color:#ccc;font-size:11px;padding:7px;">Not yet</td>
-                    </tr>`;
-                continue;
-            }
+            // Future dates — skip entirely, no row shown
+            if (isFuture) continue;
 
             const entry = week.days[dateStr] || getNRData(dateStr);
             const isNR = !week.days[dateStr];
