@@ -1780,7 +1780,193 @@ window.selectTapahOption = () => {};
 // ── END TAPAH MODULE ──
 
 // ══════════════════════════════════════════════
-// --- REPORT SWITCHER ---
+// --- ACTIVITY ANALYSIS MODAL ---
+// ══════════════════════════════════════════════
+
+window.openActivityAnalysis = () => {
+    // Remove existing modal
+    const existing = document.getElementById('activity-analysis-modal');
+    if (existing) existing.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'activity-analysis-modal';
+    modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto;';
+    modal.innerHTML = `
+        <div style="background:white;border-radius:16px;max-width:560px;width:100%;margin-top:20px;box-shadow:0 10px 40px rgba(0,0,0,0.25);overflow:hidden;">
+            <!-- Header -->
+            <div style="background:linear-gradient(135deg,#2c3e50,#3498db);padding:18px 20px;display:flex;justify-content:space-between;align-items:center;">
+                <div>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <span style="font-size:22px;">📊</span>
+                        <strong style="color:white;font-size:17px;">Activity Analysis</strong>
+                    </div>
+                    <div id="aa-user-name" style="color:rgba(255,255,255,0.75);font-size:13px;margin-top:2px;">${userProfile?.name || ''}</div>
+                </div>
+                <button onclick="document.getElementById('activity-analysis-modal').remove()"
+                    style="width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,0.2);color:white;border:none;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;margin:0;flex-shrink:0;">✕</button>
+            </div>
+
+            <!-- Period toggle -->
+            <div style="display:flex;gap:0;padding:14px 16px 0;">
+                <button id="aa-btn-this" onclick="loadActivityAnalysis('this')"
+                    style="flex:1;padding:8px;border-radius:20px 0 0 20px;background:#3498db;color:white;border:1px solid #3498db;font-weight:700;font-size:13px;cursor:pointer;margin:0;">
+                    This Week
+                </button>
+                <button id="aa-btn-last" onclick="loadActivityAnalysis('last')"
+                    style="flex:1;padding:8px;border-radius:0 20px 20px 0;background:#f8f9fa;color:#666;border:1px solid #ddd;font-weight:600;font-size:13px;cursor:pointer;margin:0;">
+                    Last Week
+                </button>
+            </div>
+
+            <!-- Content -->
+            <div id="aa-content" style="padding:16px 20px 20px;">
+                <div style="text-align:center;padding:30px;color:#aaa;">Loading…</div>
+            </div>
+        </div>`;
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+    document.body.appendChild(modal);
+    loadActivityAnalysis('this');
+};
+
+async function loadActivityAnalysis(period) {
+    // Update button styles
+    const thisBtn = document.getElementById('aa-btn-this');
+    const lastBtn = document.getElementById('aa-btn-last');
+    if (thisBtn && lastBtn) {
+        if (period === 'this') {
+            thisBtn.style.background = '#3498db'; thisBtn.style.color = 'white'; thisBtn.style.borderColor = '#3498db';
+            lastBtn.style.background = '#f8f9fa'; lastBtn.style.color = '#666'; lastBtn.style.borderColor = '#ddd';
+        } else {
+            lastBtn.style.background = '#3498db'; lastBtn.style.color = 'white'; lastBtn.style.borderColor = '#3498db';
+            thisBtn.style.background = '#f8f9fa'; thisBtn.style.color = '#666'; thisBtn.style.borderColor = '#ddd';
+        }
+    }
+
+    const content = document.getElementById('aa-content');
+    if (!content) return;
+    content.innerHTML = '<div style="text-align:center;padding:30px;color:#aaa;">Loading…</div>';
+
+    const today = new Date();
+    const thisWeekSun = new Date(today);
+    thisWeekSun.setDate(today.getDate() - today.getDay());
+
+    const weekSun = new Date(thisWeekSun);
+    if (period === 'last') weekSun.setDate(weekSun.getDate() - 7);
+
+    const weekDates = [];
+    for (let i = 0; i < 7; i++) {
+        const d = new Date(weekSun);
+        d.setDate(weekSun.getDate() + i);
+        const ds = toLocalDateStr(d);
+        if (ds <= toLocalDateStr(today)) weekDates.push(ds);
+    }
+
+    try {
+        const snap = await db.collection('users').doc(currentUser.uid)
+            .collection('sadhana')
+            .where(firebase.firestore.FieldPath.documentId(), '>=', weekDates[0])
+            .where(firebase.firestore.FieldPath.documentId(), '<=', weekDates[weekDates.length - 1])
+            .get();
+
+        const data = {};
+        snap.forEach(doc => { data[doc.id] = doc.data(); });
+
+        const filledDates = weekDates.filter(d => data[d]);
+        const totalScore = filledDates.reduce((s, d) => s + (data[d].totalScore ?? 0), 0);
+        const maxScore = weekDates.length * 175;
+        const fairMax = filledDates.length * 175;
+        const fairPct = fairMax > 0 ? Math.round(totalScore / fairMax * 100) : 0;
+
+        // Activity totals
+        const acts = {
+            Sleep:    { key: 'sleep',          max: 175, total: 0 },
+            'Wake-up':{ key: 'wakeup',         max: 175, total: 0 },
+            Chanting: { key: 'chanting',       max: 175, total: 0 },
+            Reading:  { key: 'reading',        max: 175, total: 0 },
+            Hearing:  { key: 'hearing',        max: 175, total: 0 },
+            'Morn.Prog':{ key: 'morningProgram',max:175, total: 0 },
+            'Day Sleep':{ key: 'daySleep',      max: 70,  total: 0 },
+        };
+        filledDates.forEach(d => {
+            Object.values(acts).forEach(a => {
+                a.total += data[d]?.scores?.[a.key] ?? 0;
+            });
+        });
+
+        // Date range label
+        const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        const fmt = d => `${String(d.getDate()).padStart(2,'0')} ${MONTHS[d.getMonth()]}`;
+        const weekEnd = new Date(weekSun); weekEnd.setDate(weekSun.getDate() + 6);
+        const dateRange = `${fmt(weekSun)} – ${fmt(weekEnd)}`;
+
+        // Score ring SVG
+        const color = fairPct >= 70 ? '#27ae60' : fairPct >= 50 ? '#f39c12' : '#e74c3c';
+        const ringLabel = fairPct >= 70 ? 'Good' : fairPct >= 50 ? 'OK' : 'Needs work';
+        const r = 48, circ = Math.round(2 * Math.PI * r);
+        const dash = Math.round(circ * Math.max(0, fairPct) / 100);
+
+        // Bar chart rows
+        const barRows = Object.entries(acts).map(([name, a]) => {
+            const max = filledDates.length * (a.max === 70 ? 10 : 25);
+            const pct = max > 0 ? Math.round(a.total / max * 100) : 0;
+            const barColor = a.total < 0 ? '#e74c3c' : pct >= 70 ? '#27ae60' : pct >= 40 ? '#f39c12' : '#e74c3c';
+            const barW = max > 0 ? Math.max(0, Math.min(100, (a.total / (filledDates.length * (a.max === 70 ? 10 : 25))) * 100)) : 0;
+            const displayPts = (a.total >= 0 ? '+' : '') + a.total;
+            return `
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+                    <div style="width:72px;font-size:12px;color:#555;text-align:right;flex-shrink:0;">${name}</div>
+                    <div style="flex:1;background:#f0f0f0;border-radius:20px;height:18px;overflow:hidden;position:relative;">
+                        <div style="height:100%;width:${Math.max(0, Math.min(100, barW))}%;background:${barColor};border-radius:20px;transition:width 0.5s ease;"></div>
+                    </div>
+                    <div style="width:36px;font-size:12px;font-weight:700;color:${barColor};text-align:right;flex-shrink:0;">${displayPts}</div>
+                </div>`;
+        }).join('');
+
+        content.innerHTML = `
+            <!-- Date + days info -->
+            <div style="font-size:13px;color:#888;margin-bottom:14px;">${dateRange} · ${filledDates.length} day${filledDates.length !== 1 ? 's' : ''} · ${totalScore} pts</div>
+
+            <!-- Score ring -->
+            <div style="display:flex;align-items:center;gap:20px;margin-bottom:20px;flex-wrap:wrap;">
+                <div style="position:relative;width:110px;height:110px;flex-shrink:0;">
+                    <svg width="110" height="110" viewBox="0 0 120 120">
+                        <circle cx="60" cy="60" r="${r}" fill="none" stroke="#eee" stroke-width="14"/>
+                        <circle cx="60" cy="60" r="${r}" fill="none" stroke="${color}" stroke-width="14"
+                            stroke-dasharray="${dash} ${circ - dash}"
+                            stroke-linecap="round" transform="rotate(-90 60 60)"/>
+                    </svg>
+                    <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;">
+                        <div style="font-size:20px;font-weight:700;color:${color};">${fairPct}%</div>
+                        <div style="font-size:10px;color:#aaa;">week score</div>
+                    </div>
+                </div>
+                <div>
+                    <div style="font-weight:700;font-size:15px;color:#2c3e50;margin-bottom:4px;">Weekly Score %</div>
+                    <div style="font-size:12px;color:#666;margin-bottom:8px;">Total marks earned ÷ max possible for submitted days (same as WCR).</div>
+                    <div style="font-size:12px;">
+                        <span style="color:#27ae60;font-weight:700;">≥70%</span> Good &nbsp;
+                        <span style="color:#f39c12;font-weight:700;">50–69%</span> OK &nbsp;
+                        <span style="color:#e74c3c;font-weight:700;">&lt;50%</span> Needs work
+                    </div>
+                    <div style="margin-top:6px;padding:3px 10px;background:${color}18;border-left:3px solid ${color};border-radius:4px;font-size:12px;color:${color};font-weight:700;">${ringLabel}</div>
+                </div>
+            </div>
+
+            <!-- Activity breakdown -->
+            <div style="font-weight:700;color:#3498db;font-size:14px;margin-bottom:12px;">Activity Breakdown <span style="font-size:12px;color:#aaa;font-weight:400;">(total pts this week)</span></div>
+            ${filledDates.length === 0
+                ? '<div style="text-align:center;color:#aaa;padding:20px;">No data submitted for this week yet.</div>'
+                : barRows
+            }`;
+
+    } catch (err) {
+        content.innerHTML = `<div style="text-align:center;color:#e74c3c;padding:20px;">Error loading data: ${err.message}</div>`;
+    }
+}
+
+window.loadActivityAnalysis = loadActivityAnalysis;
+
+
 // ══════════════════════════════════════════════
 window.switchReport = (type) => {
     const sadPanel   = document.getElementById('sadhana-reports-panel');
