@@ -634,8 +634,10 @@ async function loadReports(userId, containerId) {
         }
     }
 
-    // 4-week comparison (always runs with weeksData)
-    generate4WeekComparison([], weeksData);
+    // 4-week comparison is rendered AFTER weekly reports (called below after container.innerHTML)
+    // Pre-clear the comparison div so stale content never flashes above reports on refresh
+    const compContainer = document.getElementById('four-week-comparison');
+    if (compContainer) compContainer.innerHTML = '';
 
     // Always show last 4 weeks in detailed reports, even if all NR
     // Only show "no data" if we have zero weeks to show at all (impossible since we always add 4)
@@ -651,11 +653,16 @@ async function loadReports(userId, containerId) {
         let weekTotals = { total: 0, readingMins: 0, hearingMins: 0, notesMins: 0, notesMarks: 0, sleepMarks: 0, wakeupMarks: 0, morningMarks: 0, chantingMarks: 0, readingMarks: 0, hearingMarks: 0, daySleepMarks: 0 };
 
         let tableRows = '';
-        // First pass: accumulate totals (Sun→Sat order)
+        const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+
+        // First pass: accumulate totals — ONLY past days (skip future entirely)
         for (let i = 0; i < 7; i++) {
             const currentDate = new Date(weekStart);
             currentDate.setDate(weekStart.getDate() + i);
             const dateStr = toLocalDateStr(currentDate);
+            const isFuture = currentDate > todayStart;
+            if (isFuture) continue; // future days don't count toward totals
+
             const entry = week.days[dateStr] || getNRData(dateStr);
             const isNR = !week.days[dateStr];
 
@@ -672,23 +679,35 @@ async function loadReports(userId, containerId) {
             weekTotals.hearingMarks += entry.scores?.hearing  ?? 0;
             weekTotals.daySleepMarks+= entry.scores?.daySleep ?? 0;
         }
+
         // Second pass: render rows newest-day-first (Sat→Sun = i from 6 down to 0)
         for (let i = 6; i >= 0; i--) {
             const currentDate = new Date(weekStart);
             currentDate.setDate(weekStart.getDate() + i);
             const dateStr = toLocalDateStr(currentDate);
-            const isFuture = currentDate > new Date();
+            const isFuture = currentDate > todayStart;
+
+            // Future days — show a clean placeholder row, no NR, no Fill button
+            if (isFuture) {
+                const dateLabel = `<strong>${String(currentDate.getDate()).padStart(2,'0')}/${String(currentDate.getMonth()+1).padStart(2,'0')}</strong>`;
+                tableRows += `
+                    <tr style="background:#f9fafb;opacity:0.55;border-bottom:1px solid #f0f0f0;">
+                        <td style="text-align:center;padding:7px 5px;"><span style="font-size:10px;color:#bbb;">—</span></td>
+                        <td style="white-space:nowrap;padding:7px 8px;font-size:13px;color:#bbb;">${dateLabel}</td>
+                        <td colspan="18" style="text-align:center;color:#ccc;font-size:11px;padding:7px;">Not yet</td>
+                    </tr>`;
+                continue;
+            }
+
             const entry = week.days[dateStr] || getNRData(dateStr);
             const isNR = !week.days[dateStr];
             const hasBeenEdited = !isNR && entry.wasEdited === true;
 
             const dayPercent = entry.dayPercent ?? -23;
 
-            // Pass/Fail badge — only for past filled entries
+            // Pass/Fail badge — past entries only (future rows handled above via continue)
             let pfBadge = '';
-            if (isFuture) {
-                pfBadge = '<span style="font-size:10px;color:#bbb;">—</span>';
-            } else if (isNR) {
+            if (isNR) {
                 pfBadge = '<span style="display:inline-block;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;background:#fde8e8;color:#e74c3c;border:1px solid #f5c6c6;">Fail</span>';
             } else if (dayPercent >= 50) {
                 pfBadge = '<span style="display:inline-block;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;background:#e8f8f0;color:#27ae60;border:1px solid #a9dfbf;">Pass</span>';
@@ -703,7 +722,7 @@ async function loadReports(userId, containerId) {
                 : '';
             const dateLabel = `<strong>${String(currentDate.getDate()).padStart(2,'0')}/${String(currentDate.getMonth()+1).padStart(2,'0')}${editedFlag}</strong>`;
 
-            // Action button — use data-date to avoid nested quote issues
+            // Action button — NR gets Fill, filled gets Edit
             const actionBtn = isNR
                 ? `<button class="fill-btn" data-date="${dateStr}" style="padding:3px 9px;font-size:11px;background:#27ae60;color:white;width:auto;margin:0;border-radius:12px;border:none;cursor:pointer;font-weight:600;">+ Fill</button>`
                 : `<button class="edit-btn" data-date="${dateStr}" title="Edit entry" style="padding:3px 8px;font-size:13px;background:transparent;color:#3498db;width:auto;margin:0;border:none;cursor:pointer;">✏️</button>`;
@@ -719,7 +738,7 @@ async function loadReports(userId, containerId) {
             // Day % cell
             const pctColor = dayPercent >= 70 ? '#27ae60' : dayPercent >= 50 ? '#f39c12' : '#e74c3c';
             const pctBg    = dayPercent >= 50 ? '#f0fff4' : '#fff0f0';
-            const rowBg    = isNR ? 'background:#fff8f8;' : isFuture ? 'background:#fafafa;' : '';
+            const rowBg = isNR ? 'background:#fff8f8;' : '';
 
             tableRows += `
                 <tr style="${rowBg}border-bottom:1px solid #f0f0f0;">
@@ -855,6 +874,10 @@ async function loadReports(userId, containerId) {
     });
 
     container.innerHTML = html;
+
+    // Render 4-week trend comparison AFTER weekly reports are in the DOM
+    // This guarantees trend always appears below the weekly detail cards
+    generate4WeekComparison([], weeksData);
 
     // Event delegation — handles fill-btn, edit-btn, edit-hist-btn
     if (container._reportClickHandler) {
