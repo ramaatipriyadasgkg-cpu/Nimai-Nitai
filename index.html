@@ -339,10 +339,32 @@
                 <!-- SADHANA REPORTS -->
                 <div id="sadhana-reports-panel">
                     <button onclick="downloadUserExcel(currentUser.uid, userProfile.name)" style="background:var(--success); margin-bottom:15px">📥 Download My History (Excel)</button>
-                    <div class="card" style="margin-bottom: 20px;">
-                        <div id="four-week-comparison" style="overflow-x: auto;"></div>
-                    </div>
+                    
+                    <!-- Weekly Detailed Reports — FIRST -->
                     <div id="weekly-reports-container"></div>
+
+                    <!-- 4-Week Trend Comparison — BELOW reports -->
+                    <div class="card" style="margin-top:20px;">
+                        <h4 style="margin:0 0 10px;color:var(--primary);">📊 4-Week Trend Comparison</h4>
+                        <div id="four-week-comparison" style="overflow-x:auto;"></div>
+                    </div>
+
+                    <!-- Activity Analysis Card -->
+                    <div class="card" style="margin-top:20px;cursor:pointer;" onclick="openActivityAnalysis()" id="activity-analysis-card">
+                        <div style="display:flex;justify-content:space-between;align-items:center;">
+                            <div>
+                                <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+                                    <span style="font-size:20px;">📊</span>
+                                    <strong style="color:var(--primary);font-size:15px;">Activity Analysis</strong>
+                                </div>
+                                <div style="font-size:13px;color:#888;">See which activities you're excelling at and where to improve</div>
+                            </div>
+                            <button onclick="openActivityAnalysis();event.stopPropagation();"
+                                style="width:auto;padding:8px 18px;font-size:13px;background:var(--secondary);color:white;border:none;border-radius:20px;cursor:pointer;white-space:nowrap;margin:0;">
+                                View →
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- TAPAH REPORTS -->
