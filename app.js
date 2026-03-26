@@ -300,6 +300,66 @@ function isMorningProgramNotDone() {
     return document.getElementById('mp-no-btn').classList.contains('mp-active');
 }
 
+// --- BED TIME WARNING MODAL ---
+// Returns a Promise<boolean> — resolves true if user confirms, false if they go back to fix
+function showBedTimeWarning(slp, warningMsg) {
+    return new Promise((resolve) => {
+        const existing = document.getElementById('bedtime-warn-modal');
+        if (existing) existing.remove();
+
+        const modal = document.createElement('div');
+        modal.id = 'bedtime-warn-modal';
+        modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+        modal.innerHTML = `
+            <div style="background:white;border-radius:14px;max-width:380px;width:100%;padding:28px;box-shadow:0 10px 40px rgba(0,0,0,0.3);text-align:center;">
+                <div style="font-size:40px;margin-bottom:10px;">⚠️</div>
+                <h3 style="margin:0 0 10px;color:#e67e22;font-size:17px;">Check Bed Time</h3>
+                <p style="font-size:14px;color:#555;margin:0 0 8px;">You entered: <strong style="color:#e74c3c;font-size:16px;">${slp}</strong></p>
+                <p style="font-size:13px;color:#777;margin:0 0 20px;line-height:1.5;">${warningMsg}</p>
+                <div style="display:flex;gap:10px;justify-content:center;">
+                    <button id="bedwarn-fix" style="flex:1;padding:11px;background:#f8f9fa;color:#2c3e50;border:2px solid #ddd;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;">
+                        ✏️ Fix It
+                    </button>
+                    <button id="bedwarn-confirm" style="flex:1;padding:11px;background:#e67e22;color:white;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;">
+                        Yes, Submit
+                    </button>
+                </div>
+                <p style="font-size:11px;color:#aaa;margin:12px 0 0;">Score will be <strong style="color:#e74c3c;">−5</strong> for bed time regardless.</p>
+            </div>`;
+        document.body.appendChild(modal);
+
+        document.getElementById('bedwarn-fix').onclick = () => { modal.remove(); resolve(false); };
+        document.getElementById('bedwarn-confirm').onclick = () => { modal.remove(); resolve(true); };
+        modal.addEventListener('click', (e) => { if (e.target === modal) { modal.remove(); resolve(false); } });
+    });
+}
+
+// Validate bed time — returns a warning message string if suspicious, null if fine
+function getBedTimeWarning(slp) {
+    if (!slp) return null;
+    const [h, m] = slp.split(':').map(Number);
+
+    // AM hours 4:00–11:59 entered as bed time are almost certainly a mistake
+    // (user typed 10:30 meaning 10:30 PM but entered AM)
+    if (h >= 4 && h <= 11) {
+        const ampm = `${h}:${String(m).padStart(2,'0')} AM`;
+        const pm = `${h + 12}:${String(m).padStart(2,'0')} (${h}:${String(m).padStart(2,'0')} PM)`;
+        return `Did you mean <strong>${pm}</strong>?<br>A bed time of <strong>${ampm}</strong> seems unusual. Please confirm or go back to fix it.`;
+    }
+
+    // 12:xx PM range (noon) also suspicious
+    if (h === 12) {
+        return `A bed time of <strong>12:${String(m).padStart(2,'0')} PM (noon)</strong> seems unusual.<br>Did you mean <strong>00:${String(m).padStart(2,'0')}</strong> (midnight) or a late night time?`;
+    }
+
+    // Afternoon hours (13:00–19:59) — very unusual as a bed time
+    if (h >= 13 && h <= 19) {
+        return `A bed time of <strong>${h}:${String(m).padStart(2,'0')} (afternoon/evening)</strong> seems unusual.<br>Did you accidentally type the wrong time?`;
+    }
+
+    return null; // 20:00–03:59 are all normal bed times — no warning
+}
+
 // --- 7. FORM SUBMIT (new + edit) ---
 const sadhanaForm = document.getElementById('sadhana-form');
 if (sadhanaForm) {
@@ -317,6 +377,13 @@ if (sadhanaForm) {
         const hMin = parseInt(document.getElementById('hearing-mins').value) || 0;
         const nMin = parseInt(document.getElementById('notes-mins').value) || 0;
         const dsMin = parseInt(document.getElementById('day-sleep-minutes').value) || 0;
+
+        // --- Bed time sanity check ---
+        const bedWarning = getBedTimeWarning(slp);
+        if (bedWarning) {
+            const confirmed = await showBedTimeWarning(slp, bedWarning);
+            if (!confirmed) return; // user chose to fix — abort submit
+        }
 
         const sc = computeScores(slp, wak, mpTime, mpNotDone, chn, rMin, hMin, nMin, dsMin);
         const total = sc.sleep + sc.wakeup + sc.morningProgram + sc.chanting + sc.reading + sc.hearing + sc.notes + sc.daySleep;
