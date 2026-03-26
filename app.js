@@ -173,6 +173,7 @@ window.switchTab = (t) => {
     if (btn) btn.classList.add('active');
 
     if (t === 'reports' && currentUser) {
+        _reportsLoading = false; // allow fresh load on manual tab switch
         loadReports(currentUser.uid, 'weekly-reports-container');
         // Reload tapah report too if it's the active panel
         const tapPanel = document.getElementById('tapah-reports-panel');
@@ -435,7 +436,9 @@ window.editEntry = async (dateStr) => {
     // Show edit banner
     editingDate = dateStr;
     document.getElementById('edit-mode-banner').style.display = 'flex';
-    document.getElementById('edit-mode-banner').querySelector('span').textContent = `Editing: ${dateStr}`;
+    // Target the second span (text label), not the first (emoji ✏️)
+    const bannerSpans = document.getElementById('edit-mode-banner').querySelectorAll('span');
+    if (bannerSpans[1]) bannerSpans[1].textContent = `Editing: ${dateStr}`;
     document.getElementById('sadhana-submit-btn').textContent = '💾 Update Entry';
 
     // Scroll to top
@@ -450,9 +453,12 @@ function cancelEdit() {
     if (banner) banner.style.display = 'none';
     const submitBtn = document.getElementById('sadhana-submit-btn');
     if (submitBtn) submitBtn.textContent = '✅ Submit Sadhana';
-    // Reset morning program to default state
-    toggleMorningProgram(false);
-    document.getElementById('morning-program-time').value = '';
+    // Reset morning program to default state — null guard for safety
+    const mpTimeEl = document.getElementById('morning-program-time');
+    if (mpTimeEl) {
+        toggleMorningProgram(false);
+        mpTimeEl.value = '';
+    }
 }
 window.cancelEdit = cancelEdit;
 
@@ -543,7 +549,9 @@ window.viewEditHistory = async (dateStr) => {
 //   null/NR   → light red bg, red text in parentheses
 function scoreCell(score, isNR) {
     if (isNR || score === null || score === undefined) {
-        return { bg: '#fde8e8', color: '#e74c3c', text: isNR ? 'NR' : `(${score})` };
+        // NR entries carry -5 per activity — show (-5) not the string "NR"
+        const val = (score !== null && score !== undefined) ? score : -5;
+        return { bg: '#fde8e8', color: '#e74c3c', text: `(${val})` };
     }
     if (score >= 25) return { bg: 'transparent', color: '#27ae60', text: String(score) };
     if (score > 0)   return { bg: '#fffde7',     color: '#f39c12', text: String(score) };
@@ -564,7 +572,10 @@ function getScoreBackground(score) {
 }
 
 // --- 8. REPORTS ---
+let _reportsLoading = false; // debounce guard — prevents duplicate loads on mobile auth re-fires
 async function loadReports(userId, containerId) {
+    if (_reportsLoading) return;
+    _reportsLoading = true;
     const container = document.getElementById(containerId);
     if (!container) return; // Guard: element may not exist on this page
 
@@ -585,11 +596,12 @@ async function loadReports(userId, containerId) {
                 <div style="font-size:28px;margin-bottom:10px;">⚠️</div>
                 <div style="font-weight:700;margin-bottom:6px;">Could not load reports</div>
                 <div style="font-size:13px;color:#666;margin-bottom:16px;">${err.message}</div>
-                <button onclick="loadReports('${userId}','${containerId}')"
+                <button onclick="_reportsLoading=false;loadReports('${userId}','${containerId}')"
                     style="padding:10px 24px;background:#3498db;color:white;border:none;border-radius:8px;font-weight:700;font-size:14px;cursor:pointer;width:auto;">
                     🔄 Retry
                 </button>
             </div>`;
+        _reportsLoading = false;
         return;
     }
 
@@ -671,7 +683,6 @@ async function loadReports(userId, containerId) {
             const hasBeenEdited = !isNR && entry.wasEdited === true;
 
             const dayPercent = entry.dayPercent ?? -23;
-            const isPast = !isFuture && !isNR;
 
             // Pass/Fail badge — only for past filled entries
             let pfBadge = '';
@@ -846,9 +857,6 @@ async function loadReports(userId, containerId) {
     container.innerHTML = html;
 
     // Event delegation — handles fill-btn, edit-btn, edit-hist-btn
-    // Avoids inline onclick with nested quotes which breaks on some mobile browsers
-    // CRITICAL FIX: Remove previous listener before adding new one
-    // (loadReports is called multiple times — listener stacking causes double-tap bug on mobile)
     if (container._reportClickHandler) {
         container.removeEventListener('click', container._reportClickHandler);
     }
@@ -861,6 +869,7 @@ async function loadReports(userId, containerId) {
         if (histBtn) { viewEditHistory(histBtn.dataset.date); return; }
     };
     container.addEventListener('click', container._reportClickHandler);
+    _reportsLoading = false;
 }
 
 // 4-week comparison — always shows 4 weeks (NR for missing), trend oldest→newest, fair denominator
@@ -1094,9 +1103,22 @@ async function generateWeeklyCharts() {
             .where(firebase.firestore.FieldPath.documentId(), '<=', weekDates[6])
             .get();
 
+        const today2 = new Date();
+        const todayStr2 = toLocalDateStr(today2);
         let weekTotal = 0, weekDayCount = 0;
         const wData = {};
-        snapshot.forEach(doc => { wData[doc.id] = doc.data(); weekTotal += doc.data().totalScore ?? 0; weekDayCount++; });
+        snapshot.forEach(doc => { wData[doc.id] = doc.data(); });
+
+        // Count all past days in week (submitted or NR), skip future
+        weekDates.forEach(dateStr => {
+            if (dateStr > todayStr2) return; // future day — skip
+            if (wData[dateStr]) {
+                weekTotal += wData[dateStr].totalScore ?? 0;
+            } else {
+                weekTotal += -40; // NR penalty
+            }
+            weekDayCount++;
+        });
 
         labels.push(`Wk ${weekStart.getDate()}/${weekStart.getMonth() + 1}`);
         scores.push(weekDayCount > 0 ? weekTotal : null);
@@ -1104,17 +1126,18 @@ async function generateWeeklyCharts() {
         if (wi === weeks.length - 1) {
             latestWeekTotal = weekTotal;
             latestWeekDays = weekDayCount;
+            const NR_SC = { sleep:-5, wakeup:-5, morningProgram:-5, chanting:-5, reading:-5, hearing:-5, notes:-5, daySleep:0 };
             weekDates.forEach(d => {
-                if (wData[d]) {
-                    _currentActivityTotals['Sleep']          += wData[d]?.scores?.sleep || 0;
-                    _currentActivityTotals['Wake-up']        += wData[d]?.scores?.wakeup || 0;
-                    _currentActivityTotals['Morning Prog.']  += wData[d]?.scores?.morningProgram || 0;
-                    _currentActivityTotals['Chanting']       += wData[d]?.scores?.chanting || 0;
-                    _currentActivityTotals['Reading']        += wData[d]?.scores?.reading || 0;
-                    _currentActivityTotals['Hearing']        += wData[d]?.scores?.hearing || 0;
-                    _currentActivityTotals['Notes Rev.']     += wData[d]?.scores?.notes || 0;
-                    _currentActivityTotals['Day Sleep']      += wData[d]?.scores?.daySleep || 0;
-                }
+                if (d > todayStr2) return;
+                const src = wData[d] ? wData[d].scores : NR_SC;
+                _currentActivityTotals['Sleep']          += src?.sleep || 0;
+                _currentActivityTotals['Wake-up']        += src?.wakeup || 0;
+                _currentActivityTotals['Morning Prog.']  += src?.morningProgram || 0;
+                _currentActivityTotals['Chanting']       += src?.chanting || 0;
+                _currentActivityTotals['Reading']        += src?.reading || 0;
+                _currentActivityTotals['Hearing']        += src?.hearing || 0;
+                _currentActivityTotals['Notes Rev.']     += src?.notes || 0;
+                _currentActivityTotals['Day Sleep']      += src?.daySleep || 0;
             });
         }
     }
