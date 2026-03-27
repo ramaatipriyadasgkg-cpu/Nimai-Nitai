@@ -202,7 +202,8 @@ auth.onAuthStateChanged(async (user) => {
             document.getElementById('user-display-name').textContent = userProfile.name;
             loadProfilePic();
             setupDateSelect();
-            _reportsLoading = false; // always reset on fresh login
+            _reportsLoading = false; // always reset on fresh login (auth fires twice on mobile)
+            _tapahAnswering = false; // reset tapah debounce on login
             loadReports(currentUser.uid, 'weekly-reports-container');
         }
     } else {
@@ -936,8 +937,11 @@ async function loadReports(userId, containerId) {
     container.innerHTML = html;
 
     // Render 4-week trend comparison AFTER weekly reports are in the DOM
-    // This guarantees trend always appears below the weekly detail cards
-    generate4WeekComparison([], weeksData);
+    try {
+        generate4WeekComparison([], weeksData);
+    } catch(e) {
+        console.error('4-week comparison error:', e);
+    }
 
     // Event delegation — handles fill-btn, edit-btn, edit-hist-btn
     if (container._reportClickHandler) {
@@ -952,7 +956,7 @@ async function loadReports(userId, containerId) {
         if (histBtn) { viewEditHistory(histBtn.dataset.date); return; }
     };
     container.addEventListener('click', container._reportClickHandler);
-    _reportsLoading = false;
+    _reportsLoading = false; // always reset — even if comparison threw
 }
 
 // 4-week comparison — always shows 4 weeks (NR for missing), trend oldest→newest, fair denominator
@@ -1213,14 +1217,14 @@ async function generateWeeklyCharts() {
             weekDates.forEach(d => {
                 if (d > todayStr2) return;
                 const src = wData[d] ? wData[d].scores : NR_SC;
-                _currentActivityTotals['Sleep']          += src?.sleep || 0;
-                _currentActivityTotals['Wake-up']        += src?.wakeup || 0;
-                _currentActivityTotals['Morning Prog.']  += src?.morningProgram || 0;
-                _currentActivityTotals['Chanting']       += src?.chanting || 0;
-                _currentActivityTotals['Reading']        += src?.reading || 0;
-                _currentActivityTotals['Hearing']        += src?.hearing || 0;
-                _currentActivityTotals['Notes Rev.']     += src?.notes || 0;
-                _currentActivityTotals['Day Sleep']      += src?.daySleep || 0;
+                _currentActivityTotals['Sleep']          += src?.sleep ?? 0;
+                _currentActivityTotals['Wake-up']        += src?.wakeup ?? 0;
+                _currentActivityTotals['Morning Prog.']  += src?.morningProgram ?? 0;
+                _currentActivityTotals['Chanting']       += src?.chanting ?? 0;
+                _currentActivityTotals['Reading']        += src?.reading ?? 0;
+                _currentActivityTotals['Hearing']        += src?.hearing ?? 0;
+                _currentActivityTotals['Notes Rev.']     += src?.notes ?? 0;
+                _currentActivityTotals['Day Sleep']      += src?.daySleep ?? 0;
             });
         }
     }
@@ -1482,6 +1486,7 @@ let _flashCardIndex = 0; // current card index (0–9)
 function resetTapahForm() {
     _tapahAnswers = {};
     _flashCardIndex = 0;
+    _tapahAnswering = false; // clear any pending debounce on reset
     setupTapahDateSelect();
     const sel = document.getElementById('tapah-date');
     if (sel) sel.disabled = false;
@@ -1586,7 +1591,12 @@ function highlightBtn(val, isAnukul, flash = true) {
     if (btn) { btn.style.border = `2px solid ${color}`; btn.style.background = bg; btn.style.color = color; }
 }
 
+let _tapahAnswering = false; // debounce: prevents double-fire on mobile touch
 window.tapahFlashAnswer = (val) => {
+    if (_tapahAnswering) return; // block rapid/double tap
+    _tapahAnswering = true;
+    setTimeout(() => { _tapahAnswering = false; }, 700); // unlock after advance
+
     const q = ALL_TAPAH_QUESTIONS[_flashCardIndex];
     if (!q) return;
     const isAnukul = q.section === 'anukul';
@@ -1660,6 +1670,7 @@ function showTapahDoneScreen() {
 }
 
 window.tapahFlashReview = () => {
+    _tapahAnswering = false; // reset debounce when going back to review
     // Go back to first unanswered or first card
     const firstUnanswered = ALL_TAPAH_QUESTIONS.findIndex(q => !_tapahAnswers[q.id]);
     _flashCardIndex = firstUnanswered >= 0 ? firstUnanswered : 0;
@@ -1734,7 +1745,8 @@ window.editTapahEntry = async (dateStr) => {
     const bannerText = document.getElementById('tapah-edit-banner-text');
     if (banner) banner.style.display = 'flex';
     if (bannerText) bannerText.textContent = `Editing Tapah: ${dateStr}`;
-    document.getElementById('tapah-submit-btn').textContent = '💾 Update Tapah';
+    const editSubmitBtn = document.getElementById('tapah-submit-btn');
+    if (editSubmitBtn) { editSubmitBtn.style.display = 'none'; editSubmitBtn.textContent = '💾 Update Tapah'; }
     window.scrollTo({ top: 0, behavior: 'smooth' });
 };
 
@@ -1867,6 +1879,11 @@ async function loadActivityAnalysis(period) {
         d.setDate(weekSun.getDate() + i);
         const ds = toLocalDateStr(d);
         if (ds <= toLocalDateStr(today)) weekDates.push(ds);
+    }
+
+    if (weekDates.length === 0) {
+        if (content) content.innerHTML = '<div style="text-align:center;color:#aaa;padding:20px;">No dates available for this week.</div>';
+        return;
     }
 
     try {
@@ -2113,11 +2130,7 @@ function renderTapahReport(allData) {
         if (val === 'no') return 'N';
         return '–';
     };
-    const scoreLabel = (val, section) => {
-        if (!val || val === 'nr') return '–';
-        const s = section === 'anukul' ? getAanukulScore(val) : getPratikulScore(val);
-        return (s >= 0 ? '+' : '') + s;
-    };
+    // scoreLabel removed - was unused dead code
 
     // Format date label: "01 Mar"
     const _TAPAH_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
