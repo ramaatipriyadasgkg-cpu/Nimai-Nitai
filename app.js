@@ -707,9 +707,6 @@ async function loadReports(userId, containerId) {
     }
 
     // 4-week comparison is rendered AFTER weekly reports (called below after container.innerHTML)
-    // Pre-clear the comparison div so stale content never flashes above reports on refresh
-    const compContainer = document.getElementById('four-week-comparison');
-    if (compContainer) compContainer.innerHTML = '';
 
     // Always show last 4 weeks in detailed reports, even if all NR
     // Only show "no data" if we have zero weeks to show at all (impossible since we always add 4)
