@@ -47,28 +47,22 @@
         .score-positive { color: var(--success); font-weight: bold; }
         .score-negative { color: var(--danger); font-weight: bold; }
         .score-neutral { color: #666; }
-        /* Morning Program toggle */
         .mp-toggle { transition: all 0.2s; cursor:pointer; }
         .mp-toggle.mp-active[id="mp-done-btn"] { border-color:#27ae60!important; background:#27ae60!important; color:white!important; }
         .mp-toggle.mp-active[id="mp-no-btn"] { border-color:#e74c3c!important; background:#e74c3c!important; color:white!important; }
-        /* Password wrapper with eye toggle */
         .pw-wrap { position: relative; margin: 8px 0; }
         .pw-wrap input { margin: 0; padding-right: 44px; width: 100%; }
         .pw-eye { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #888; font-size: 18px; width: auto; padding: 0; margin: 0; line-height: 1; }
         .pw-eye:hover { color: #3498db; opacity: 1; }
-        /* Caps lock warning */
         .caps-warning { display:none; align-items:center; gap:6px; background:#fff3cd; border:1px solid #ffc107; border-radius:6px; padding:5px 10px; font-size:12px; color:#856404; font-weight:600; margin-top:4px; }
         .caps-warning.show { display:flex; }
-        /* Forgot password link */
         .forgot-link { text-align:right; display:block; font-size:13px; color:var(--secondary); cursor:pointer; margin-top:-2px; margin-bottom:6px; text-decoration:none; }
         .forgot-link:hover { text-decoration:underline; }
-        /* PWA install banner */
         #pwa-install-banner { display:none; position:fixed; bottom:16px; left:50%; transform:translateX(-50%); background:#2c3e50; color:white; padding:12px 20px; border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,0.3); z-index:9999; align-items:center; gap:12px; max-width:360px; width:calc(100% - 32px); }
         #pwa-install-banner.show { display:flex; }
     </style>
 </head>
 <body>
-    <!-- PWA Install Banner -->
     <div id="pwa-install-banner">
         <span style="font-size:22px;">📿</span>
         <div style="flex:1;">
@@ -105,8 +99,6 @@
 
         <section id="profile-section" class="card hidden">
             <h2 id="profile-title">Set Your Name</h2>
-
-            <!-- Profile Picture -->
             <div id="profile-pic-section" style="text-align:center;margin-bottom:20px;">
                 <div style="position:relative;display:inline-block;">
                     <img id="profile-pic-preview" src=""
@@ -118,15 +110,12 @@
                 </div>
                 <div id="profile-pic-hint" style="font-size:11px;color:#aaa;margin-top:6px;">Tap 📷 to change photo</div>
             </div>
-
             <form id="profile-form">
                 <label><strong>Full Name:</strong></label>
                 <input type="text" id="profile-name" placeholder="Full Name" required>
                 <button type="submit">💾 Save Name</button>
                 <button type="button" onclick="showSection('dashboard')" id="cancel-edit" class="hidden" style="background:#95a5a6;margin-top:4px;">Cancel</button>
             </form>
-
-            <!-- Change Password section — only shown in edit mode (not first-time setup) -->
             <div id="change-password-section" class="hidden" style="margin-top:20px;padding-top:20px;border-top:1px solid #eee;">
                 <h3 style="margin-bottom:12px;color:var(--primary);font-size:1em;">🔒 Change Password</h3>
                 <form id="change-password-form">
@@ -167,7 +156,6 @@
             </div>
 
             <div id="sadhana-tab" class="tab-content active">
-                <!-- Edit mode banner -->
                 <div id="edit-mode-banner" style="display:none;background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:10px 15px;margin-bottom:12px;align-items:center;justify-content:space-between;gap:10px;">
                     <div style="display:flex;align-items:center;gap:8px;">
                         <span style="font-size:18px;">✏️</span>
@@ -175,19 +163,14 @@
                     </div>
                     <button onclick="cancelEdit()" style="width:auto;padding:5px 14px;background:#6c757d;font-size:13px;margin:0;border-radius:6px;">✕ Cancel Edit</button>
                 </div>
-
                 <div class="card">
                     <form id="sadhana-form">
                         <label><strong>Date:</strong></label>
                         <select id="sadhana-date" required></select>
-
                         <label><strong>Bed Time (Yesterday):</strong></label>
                         <input type="time" id="sleep-time" required>
-
                         <label><strong>Wake Up Time:</strong></label>
                         <input type="time" id="wakeup-time" required>
-
-                        <!-- CHANGE 3: Morning Program with Yes/No toggle -->
                         <label><strong>Morning Program:</strong></label>
                         <div style="display:flex;gap:8px;margin:6px 0 4px;">
                             <button type="button" id="mp-done-btn" onclick="toggleMorningProgram(false)"
@@ -205,33 +188,24 @@
                             <input type="time" id="morning-program-time">
                             <small style="display:block;color:#666;margin-top:-4px;margin-bottom:8px;">Target: 4:45 AM for 25 marks</small>
                         </div>
-
                         <label><strong>Chanting (Last round by):</strong></label>
                         <input type="time" id="chanting-time" required>
                         <small style="display:block;color:#666;margin-top:-5px;margin-bottom:8px;">Target: Before 9:00 AM for 25 marks</small>
-
                         <label><strong>Reading (Pathan) - Minutes:</strong></label>
                         <input type="number" id="reading-mins" placeholder="Enter minutes" required min="0" value="0">
-
                         <label><strong>Hearing (Shravan) - Minutes:</strong></label>
                         <input type="number" id="hearing-mins" placeholder="Enter minutes" required min="0" value="0">
-
                         <label><strong>Notes Revision - Minutes:</strong></label>
                         <input type="number" id="notes-mins" placeholder="Enter minutes" required min="0" value="0">
                         <small style="display:block;color:#666;margin-top:-5px;margin-bottom:8px;">Target: 35 mins for 25 marks | Weekly: 245 mins for full marks</small>
-
                         <label><strong>Day Sleep (Mins):</strong></label>
                         <input type="number" id="day-sleep-minutes" value="0" required>
-
                         <button type="submit" id="sadhana-submit-btn" style="background:var(--success);margin-top:15px;">✅ Submit Sadhana</button>
                     </form>
                 </div>
             </div>
 
-            <!-- ══════════════ TAPAH TAB ══════════════ -->
             <div id="tapah-tab" class="tab-content hidden">
-
-                <!-- Edit mode banner -->
                 <div id="tapah-edit-banner" style="display:none;background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:10px 15px;margin-bottom:12px;align-items:center;justify-content:space-between;gap:10px;">
                     <div style="display:flex;align-items:center;gap:8px;">
                         <span style="font-size:18px;">✏️</span>
@@ -239,34 +213,22 @@
                     </div>
                     <button onclick="cancelTapahEdit()" style="width:auto;padding:5px 14px;background:#6c757d;font-size:13px;margin:0;border-radius:6px;">✕ Cancel Edit</button>
                 </div>
-
-                <!-- Date selector -->
                 <div class="card" style="margin-bottom:16px;padding:14px 18px;">
                     <label><strong>Date:</strong></label>
                     <select id="tapah-date" required></select>
                 </div>
-
-                <!-- ── FLASHCARD AREA ── -->
                 <div id="tapah-flashcard-area" class="card" style="margin-bottom:16px;padding:0;overflow:hidden;position:relative;min-height:320px;">
-
-                    <!-- Progress bar -->
                     <div style="background:#f0f0f0;height:5px;">
                         <div id="tapah-progress-bar" style="height:5px;background:linear-gradient(90deg,#764ba2,#667eea);width:0%;transition:width 0.4s ease;border-radius:3px;"></div>
                     </div>
-
-                    <!-- Card counter -->
                     <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 18px 0;">
                         <span id="tapah-card-counter" style="font-size:12px;color:#888;font-weight:600;">Q 1 / 10</span>
                         <span id="tapah-section-badge" style="font-size:11px;padding:2px 10px;border-radius:20px;font-weight:700;background:#e8f8f0;color:#27ae60;">🌿 Anukulasya</span>
                     </div>
-
-                    <!-- The card -->
                     <div id="tapah-card" style="padding:24px 20px 16px;transition:opacity 0.2s,transform 0.2s;">
                         <div id="tapah-card-question" style="font-size:16px;font-weight:700;color:#2c3e50;margin-bottom:6px;line-height:1.4;"></div>
                         <div id="tapah-card-meta" style="font-size:12px;color:#aaa;margin-bottom:24px;"></div>
                         <div id="tapah-card-scoring" style="font-size:12px;color:#888;margin-bottom:18px;padding:8px 12px;background:#f8f9fa;border-radius:8px;"></div>
-
-                        <!-- Answer buttons -->
                         <div style="display:flex;gap:10px;">
                             <button id="tapah-btn-yes" type="button" onclick="tapahFlashAnswer('yes')"
                                 style="flex:1;padding:14px 8px;border-radius:10px;border:2px solid #ddd;background:#f8f9fa;color:#555;font-weight:700;font-size:14px;width:auto;margin:0;cursor:pointer;transition:all 0.15s;">
@@ -281,12 +243,8 @@
                                 ❌ No
                             </button>
                         </div>
-
-                        <!-- Score flash -->
                         <div id="tapah-score-flash" style="text-align:center;height:28px;margin-top:10px;font-size:15px;font-weight:700;opacity:0;transition:opacity 0.3s;"></div>
                     </div>
-
-                    <!-- Done screen (shown after all Q answered) -->
                     <div id="tapah-done-screen" style="display:none;padding:30px 20px;text-align:center;">
                         <div style="font-size:48px;margin-bottom:12px;">🔥</div>
                         <div style="font-weight:700;font-size:18px;color:#764ba2;margin-bottom:6px;">All Done!</div>
@@ -298,8 +256,6 @@
                         </button>
                     </div>
                 </div>
-
-                <!-- Score totals (always visible) -->
                 <div style="display:flex;gap:10px;margin-bottom:16px;">
                     <div class="card" style="flex:1;text-align:center;padding:12px 8px;margin-bottom:0;border-left:4px solid #27ae60;">
                         <div style="font-size:11px;color:#27ae60;font-weight:600;margin-bottom:2px;">Anukulasya</div>
@@ -315,7 +271,6 @@
                     </div>
                 </div>
                 <div id="tapah-percent-display" style="display:none;"></div>
-
                 <button type="button" id="tapah-submit-btn" onclick="submitTapahFromFlash()"
                     style="background:#764ba2;width:100%;padding:12px;color:white;border:none;border-radius:8px;font-weight:700;font-size:15px;cursor:pointer;display:none;">
                     🔥 Submit Tapah
@@ -323,7 +278,6 @@
             </div>
 
             <div id="reports-tab" class="tab-content hidden">
-                <!-- Report Type Toggle -->
                 <div style="display:flex;gap:10px;margin-bottom:16px;">
                     <button id="report-sadhana-btn" onclick="switchReport('sadhana')"
                         style="flex:1;padding:10px;border-radius:20px;background:var(--secondary);color:white;font-weight:600;border:none;">
@@ -334,21 +288,13 @@
                         🔥 Tapah
                     </button>
                 </div>
-
-                <!-- SADHANA REPORTS -->
                 <div id="sadhana-reports-panel">
                     <button onclick="downloadUserExcel(currentUser.uid, userProfile.name)" style="background:var(--success); margin-bottom:15px">📥 Download My History (Excel)</button>
-                    
-                    <!-- Weekly Detailed Reports — FIRST -->
                     <div id="weekly-reports-container"></div>
-
-                    <!-- 4-Week Trend Comparison — BELOW reports -->
                     <div class="card" style="margin-top:20px;">
                         <h4 style="margin:0 0 10px;color:var(--primary);">📊 4-Week Trend Comparison</h4>
                         <div id="four-week-comparison" style="overflow-x:auto;"></div>
                     </div>
-
-                    <!-- Activity Analysis Card -->
                     <div class="card" style="margin-top:20px;cursor:pointer;" onclick="openActivityAnalysis()" id="activity-analysis-card">
                         <div style="display:flex;justify-content:space-between;align-items:center;">
                             <div>
@@ -365,8 +311,6 @@
                         </div>
                     </div>
                 </div>
-
-                <!-- TAPAH REPORTS -->
                 <div id="tapah-reports-panel" style="display:none;">
                     <div id="tapah-report-container"></div>
                 </div>
@@ -380,17 +324,11 @@
                         <option value="weekly">Last 4 Weeks</option>
                         <option value="monthly">Last 6 Months</option>
                     </select>
-
-                    <!-- Weekly score ring -->
                     <div id="score-ring-container" style="margin-top:20px;padding:16px;background:#f8f9fa;border-radius:10px;"></div>
-
-                    <!-- Score line/bar chart -->
                     <div style="margin-top:20px;">
                         <h4 style="margin-bottom:10px;color:var(--primary);">Daily Performance</h4>
                         <canvas id="score-chart"></canvas>
                     </div>
-
-                    <!-- Activity breakdown horizontal bar with filters -->
                     <div id="activity-chart-section" style="margin-top:24px;">
                         <h4 style="margin-bottom:6px;color:var(--primary);">Activity Breakdown <span style="font-size:12px;font-weight:normal;color:#888;">(total pts this period)</span></h4>
                         <div id="activity-filters" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
@@ -414,16 +352,25 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="app.js"></script>
     <script>
-        // PWA Service Worker Registration
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('sw.js')
-                    .then(reg => console.log('SW registered:', reg.scope))
+                    .then(reg => {
+                        console.log('SW registered:', reg.scope);
+                        reg.update();
+                    })
                     .catch(err => console.log('SW registration failed:', err));
+
+                navigator.serviceWorker.addEventListener('controllerchange', () => {
+                    console.log('SW updated — reloading for fresh content');
+                    if (!document.getElementById('sadhana-form')?.querySelector(':focus') &&
+                        !document.getElementById('login-form')?.querySelector(':focus')) {
+                        window.location.reload();
+                    }
+                });
             });
         }
 
-        // PWA Install Prompt
         let deferredPrompt;
         window.addEventListener('beforeinstallprompt', (e) => {
             e.preventDefault();
