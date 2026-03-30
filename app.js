@@ -147,10 +147,10 @@ window.downloadUserExcel = async (userId, userName) => {
         const worksheet = XLSX.utils.aoa_to_sheet(dataArray);
         worksheet['!cols'] = [{wch:10},{wch:8},{wch:4},{wch:8},{wch:4},{wch:8},{wch:4},{wch:8},{wch:4},{wch:10},{wch:4},{wch:10},{wch:4},{wch:10},{wch:4},{wch:12},{wch:4},{wch:8},{wch:6}];
         const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, 'Sadhana History');
-        XLSX.writeFile(workbook, `${userName}_Sadhana_History.xlsx`);
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Sadhna History');
+        XLSX.writeFile(workbook, `${userName}_Sadhna_History.xlsx`);
     } catch (error) {
-        alert("Error downloading Excel: " + error.message);
+        alert("Could not download Excel. Please check your internet connection and try again.");
     }
 };
 
@@ -160,30 +160,296 @@ function showSection(section) {
         document.getElementById(`${s}-section`).classList.add('hidden');
     });
     document.getElementById(`${section}-section`).classList.remove('hidden');
+    // Show/hide bottom nav
+    const bottomNav = document.getElementById('bottom-nav');
+    if (bottomNav) bottomNav.style.display = (section === 'dashboard') ? 'block' : 'none';
 }
 
-window.switchTab = (t) => {
-    document.querySelectorAll('.tab-content').forEach(el => { el.classList.remove('active'); el.classList.add('hidden'); });
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+// --- MAIN TAB SWITCHER (bottom nav) ---
+window.switchMainTab = (tab) => {
+    // Hide all main tab contents
+    document.querySelectorAll('.main-tab-content').forEach(el => { el.style.display = 'none'; });
+    // Show selected
+    const target = document.getElementById(tab === 'sadhna' ? 'sadhna-main-tab' : tab === 'tapah' ? 'tapah-main-tab' : 'home-tab');
+    if (target) target.style.display = 'block';
 
-    const tabContent = document.getElementById(t + '-tab');
-    if (tabContent) { tabContent.classList.remove('hidden'); tabContent.classList.add('active'); }
+    // Update bottom nav active state
+    document.querySelectorAll('.bottom-nav-btn').forEach(btn => {
+        const isActive = btn.dataset.tab === tab;
+        btn.style.color = isActive ? '#3498db' : '#999';
+    });
 
-    const btn = document.querySelector(`button[onclick*="switchTab('${t}')"]`);
-    if (btn) btn.classList.add('active');
-
-    if (t === 'reports' && currentUser) {
-        _reportsLoading = false; // allow fresh load on manual tab switch
-        loadReports(currentUser.uid, 'weekly-reports-container');
-        // Reload tapah report too if it's the active panel
-        const tapPanel = document.getElementById('tapah-reports-panel');
-        if (tapPanel && tapPanel.style.display !== 'none') loadTapahReport();
+    // Load data for the tab
+    if (tab === 'home' && currentUser) loadHomeScreen();
+    if (tab === 'sadhna') {
+        // Show sadhana form
+        const sadhTab = document.getElementById('sadhana-tab');
+        if (sadhTab) { sadhTab.classList.remove('hidden'); sadhTab.classList.add('active'); }
     }
-    if (t === 'charts' && currentUser) generateCharts();
-    if (t === 'tapah') { resetTapahForm(); }
-    // Reset edit mode when leaving Daily Entry
-    if (t !== 'sadhana') cancelEdit();
+    if (tab === 'tapah') {
+        const tapTab = document.getElementById('tapah-tab');
+        if (tapTab) { tapTab.classList.remove('hidden'); tapTab.classList.add('active'); }
+        resetTapahForm();
+    }
 };
+
+// --- SUB-TAB SWITCHER (within Sadhna / Tapah) ---
+window.switchSubTab = (parent, sub) => {
+    const activeColor = parent === 'sadhna' ? '#2c3e50' : '#764ba2';
+    // Hide all sub-tab contents for this parent
+    document.querySelectorAll(`.${parent}-subtab-content`).forEach(el => { el.style.display = 'none'; });
+    // Show selected
+    const target = document.getElementById(`${parent}-${sub}-subtab`);
+    if (target) target.style.display = 'block';
+
+    // Update sub-tab button styles
+    document.querySelectorAll(`.${parent}-sub`).forEach(btn => {
+        btn.style.background = '#f0f0f0';
+        btn.style.color = '#666';
+    });
+    const activeBtn = document.querySelector(`.${parent}-sub[onclick*="'${sub}'"]`);
+    if (activeBtn) {
+        activeBtn.style.background = activeColor;
+        activeBtn.style.color = 'white';
+    }
+
+    // Show the inner tab content too
+    if (parent === 'sadhna' && sub === 'entry') {
+        const st = document.getElementById('sadhana-tab');
+        if (st) { st.classList.remove('hidden'); st.classList.add('active'); }
+    }
+    if (parent === 'tapah' && sub === 'entry') {
+        const tt = document.getElementById('tapah-tab');
+        if (tt) { tt.classList.remove('hidden'); tt.classList.add('active'); }
+        resetTapahForm();
+    }
+
+    // Load data
+    if (parent === 'sadhna' && sub === 'reports' && currentUser) {
+        _reportsLoading = false;
+        loadReports(currentUser.uid, 'weekly-reports-container');
+    }
+    if (parent === 'sadhna' && sub === 'progress' && currentUser) generateCharts();
+    if (parent === 'tapah' && sub === 'reports' && currentUser) loadTapahReport();
+};
+
+// Legacy switchTab — keep for backward compat (edit buttons etc.)
+window.switchTab = (t) => {
+    if (t === 'sadhana') { switchMainTab('sadhna'); switchSubTab('sadhna', 'entry'); }
+    else if (t === 'tapah') { switchMainTab('tapah'); switchSubTab('tapah', 'entry'); }
+    else if (t === 'reports') { switchMainTab('sadhna'); switchSubTab('sadhna', 'reports'); }
+    else if (t === 'charts') { switchMainTab('sadhna'); switchSubTab('sadhna', 'progress'); }
+};
+
+// --- HOME SCREEN ---
+async function loadHomeScreen() {
+    const container = document.getElementById('home-content');
+    if (!container || !currentUser) return;
+
+    container.innerHTML = '<div style="text-align:center;padding:40px;color:#888;">⏳ Loading...</div>';
+
+    try {
+        const today = new Date();
+        const todayStr = toLocalDateStr(today);
+        // Get this week's Sunday
+        const thisWeekSun = new Date(today);
+        thisWeekSun.setDate(today.getDate() - today.getDay());
+        const sunStr = toLocalDateStr(thisWeekSun);
+        const satDate = new Date(thisWeekSun);
+        satDate.setDate(thisWeekSun.getDate() + 6);
+        const satStr = toLocalDateStr(satDate);
+
+        // Fetch this week's data
+        const snap = await db.collection('users').doc(currentUser.uid)
+            .collection('sadhana')
+            .where(firebase.firestore.FieldPath.documentId(), '>=', sunStr)
+            .where(firebase.firestore.FieldPath.documentId(), '<=', satStr)
+            .get();
+
+        const weekData = {};
+        snap.forEach(doc => { weekData[doc.id] = doc.data(); });
+
+        // Calculate week stats
+        let totalScore = 0, daysFilled = 0, elapsedDays = 0;
+        const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const dayDots = [];
+        const actTotals = { Sleep: 0, 'Wake-up': 0, 'Morning Prog.': 0, Chanting: 0, Reading: 0, Hearing: 0, 'Notes Rev.': 0, 'Day Sleep': 0 };
+        const NR_SC = { sleep: -5, wakeup: -5, morningProgram: -5, chanting: -5, reading: -5, hearing: -5, notes: -5, daySleep: 0 };
+
+        for (let i = 0; i < 7; i++) {
+            const d = new Date(thisWeekSun);
+            d.setDate(thisWeekSun.getDate() + i);
+            const ds = toLocalDateStr(d);
+            const isFuture = d > today;
+            const isToday = ds === todayStr;
+            const filled = !!weekData[ds];
+
+            if (!isFuture) {
+                elapsedDays++;
+                if (filled) {
+                    daysFilled++;
+                    totalScore += weekData[ds].totalScore ?? 0;
+                    const sc = weekData[ds].scores || {};
+                    actTotals['Sleep'] += sc.sleep ?? 0;
+                    actTotals['Wake-up'] += sc.wakeup ?? 0;
+                    actTotals['Morning Prog.'] += sc.morningProgram ?? 0;
+                    actTotals['Chanting'] += sc.chanting ?? 0;
+                    actTotals['Reading'] += sc.reading ?? 0;
+                    actTotals['Hearing'] += sc.hearing ?? 0;
+                    actTotals['Notes Rev.'] += sc.notes ?? 0;
+                    actTotals['Day Sleep'] += sc.daySleep ?? 0;
+                } else {
+                    totalScore += -40;
+                    const map = { sleep: 'Sleep', wakeup: 'Wake-up', morningProgram: 'Morning Prog.', chanting: 'Chanting', reading: 'Reading', hearing: 'Hearing', notes: 'Notes Rev.', daySleep: 'Day Sleep' };
+                    Object.keys(NR_SC).forEach(k => {
+                        actTotals[map[k]] += NR_SC[k];
+                    });
+                }
+            }
+
+            dayDots.push({ name: dayNames[i], filled, isFuture, isToday });
+        }
+
+        const fairMax = elapsedDays * 175;
+        const weekPercent = fairMax > 0 ? Math.round((totalScore / fairMax) * 100) : 0;
+        const todayFilled = !!weekData[todayStr];
+
+        // Calculate streak — fetch last 60 days to check properly
+        let streak = 0;
+        const streakStart = new Date(today);
+        streakStart.setDate(today.getDate() - 59);
+        const streakSnap = await db.collection('users').doc(currentUser.uid)
+            .collection('sadhana')
+            .where(firebase.firestore.FieldPath.documentId(), '>=', toLocalDateStr(streakStart))
+            .where(firebase.firestore.FieldPath.documentId(), '<=', todayStr)
+            .get();
+        const streakData = {};
+        streakSnap.forEach(doc => { streakData[doc.id] = true; });
+
+        const checkDate = new Date(today);
+        if (!todayFilled) checkDate.setDate(checkDate.getDate() - 1);
+        for (let i = 0; i < 60; i++) {
+            const cs = toLocalDateStr(checkDate);
+            if (streakData[cs]) {
+                streak++;
+                checkDate.setDate(checkDate.getDate() - 1);
+            } else {
+                break;
+            }
+        }
+
+        // Score ring color
+        const ringColor = weekPercent >= 70 ? '#27ae60' : weekPercent >= 50 ? '#f39c12' : '#e74c3c';
+        const circumference = Math.round(2 * Math.PI * 48);
+        const dashLen = Math.round(circumference * Math.max(0, weekPercent) / 100);
+
+        // Day dots HTML
+        const dotsHtml = dayDots.map(d => {
+            if (d.isFuture) return `<div style="text-align:center;"><div style="width:32px;height:32px;border-radius:50%;border:2px solid #e0e0e0;margin:0 auto;display:flex;align-items:center;justify-content:center;color:#ccc;font-size:14px;">○</div><div style="font-size:10px;color:#aaa;margin-top:3px;">${d.name}</div></div>`;
+            if (d.filled) return `<div style="text-align:center;"><div style="width:32px;height:32px;border-radius:50%;background:#27ae60;margin:0 auto;display:flex;align-items:center;justify-content:center;color:white;font-size:16px;">✓</div><div style="font-size:10px;color:#555;margin-top:3px;">${d.name}</div></div>`;
+            if (d.isToday) return `<div style="text-align:center;"><div style="width:32px;height:32px;border-radius:50%;border:2px solid #3498db;margin:0 auto;display:flex;align-items:center;justify-content:center;color:#3498db;font-size:14px;">○</div><div style="font-size:10px;color:#3498db;font-weight:600;margin-top:3px;">${d.name}</div></div>`;
+            return `<div style="text-align:center;"><div style="width:32px;height:32px;border-radius:50%;background:#e74c3c;margin:0 auto;display:flex;align-items:center;justify-content:center;color:white;font-size:14px;">✗</div><div style="font-size:10px;color:#555;margin-top:3px;">${d.name}</div></div>`;
+        }).join('');
+
+        // Activity bars HTML — per-activity max (Day Sleep max is 10/day, rest 25/day)
+        const actMaxMap = { 'Day Sleep': elapsedDays * 10 };
+        const defaultActMax = elapsedDays * 25;
+        const actEmojis = { Sleep: '🛏️', 'Wake-up': '⏰', 'Morning Prog.': '🙏', Chanting: '📿', Reading: '📖', Hearing: '🎧', 'Notes Rev.': '📝', 'Day Sleep': '😴' };
+        const actBarsHtml = Object.entries(actTotals).map(([name, val]) => {
+            const thisMax = actMaxMap[name] || defaultActMax;
+            const pct = thisMax > 0 ? Math.max(0, Math.round((val / thisMax) * 100)) : 0;
+            return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                <span style="font-size:12px;min-width:80px;text-align:right;color:#555;">${actEmojis[name] || ''} ${name}</span>
+                <div style="flex:1;background:#e8ecf1;border-radius:6px;height:10px;overflow:hidden;">
+                    <div style="width:${pct}%;height:100%;background:#3498db;border-radius:6px;transition:width 0.5s;"></div>
+                </div>
+                <span style="font-size:12px;color:#555;min-width:36px;text-align:right;font-weight:600;">${pct}%</span>
+            </div>`;
+        }).join('');
+
+        container.innerHTML = `
+            <!-- Weekly Summary -->
+            <div class="card" style="padding:20px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <span style="font-size:18px;">📅</span>
+                        <strong style="color:#2c3e50;font-size:15px;">Weekly Summary</strong>
+                    </div>
+                    <div style="display:flex;gap:6px;">
+                        <button onclick="loadHomeScreen()" style="width:auto;padding:5px 14px;border-radius:20px;background:#2c3e50;color:white;font-size:12px;font-weight:600;border:none;margin:0;cursor:pointer;">This Week</button>
+                    </div>
+                </div>
+                <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;">
+                    <div style="position:relative;width:110px;height:110px;flex-shrink:0;">
+                        <svg width="110" height="110" viewBox="0 0 120 120">
+                            <circle cx="60" cy="60" r="48" fill="none" stroke="#eee" stroke-width="12"/>
+                            <circle cx="60" cy="60" r="48" fill="none" stroke="${ringColor}" stroke-width="12"
+                                stroke-dasharray="${dashLen} ${circumference - dashLen}"
+                                stroke-linecap="round" transform="rotate(-90 60 60)"/>
+                        </svg>
+                        <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;">
+                            <div style="font-size:24px;font-weight:bold;color:${ringColor};">${weekPercent}%</div>
+                            <div style="font-size:9px;color:#888;">score</div>
+                        </div>
+                    </div>
+                    <div style="flex:1;display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                        <div class="card" style="text-align:center;padding:12px 8px;margin:0;border:1px solid #eee;">
+                            <div style="font-size:22px;font-weight:700;color:#2c3e50;">${totalScore}</div>
+                            <div style="font-size:11px;color:#888;">Points</div>
+                        </div>
+                        <div class="card" style="text-align:center;padding:12px 8px;margin:0;border:1px solid #eee;">
+                            <div style="font-size:22px;font-weight:700;color:#2c3e50;">${daysFilled}</div>
+                            <div style="font-size:11px;color:#888;">Days Filled</div>
+                        </div>
+                    </div>
+                </div>
+                ${streak > 0 ? `<div class="card" style="text-align:center;padding:10px;margin:14px 0 0;border:1px solid #eee;">
+                    <span style="font-size:20px;font-weight:700;color:#2c3e50;">${streak}</span>
+                    <span style="font-size:12px;color:#f39c12;font-weight:600;margin-left:6px;">🔥 day streak</span>
+                </div>` : ''}
+                <div style="display:flex;justify-content:space-around;margin-top:16px;padding-top:14px;border-top:1px solid #f0f0f0;">
+                    ${dotsHtml}
+                </div>
+            </div>
+
+            <!-- Today's reminder -->
+            ${!todayFilled ? `
+            <div class="card" style="padding:16px 20px;border-left:4px solid #f39c12;margin-top:0;">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+                    <span style="font-size:18px;">⚠️</span>
+                    <span style="font-weight:600;color:#856404;">Haven't filled today's sadhna yet</span>
+                    <span style="font-size:12px;color:#999;">(आज की साधना अभी भरी नहीं है)</span>
+                </div>
+                <button onclick="switchMainTab('sadhna');switchSubTab('sadhna','entry');"
+                    style="width:100%;padding:14px;background:#2c3e50;color:white;border:none;border-radius:10px;font-weight:700;font-size:15px;cursor:pointer;margin:0;">
+                    📝 Fill Today's Sadhna →
+                </button>
+            </div>` : `
+            <div class="card" style="padding:14px 20px;border-left:4px solid #27ae60;margin-top:0;">
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <span style="font-size:18px;">✅</span>
+                    <span style="font-weight:600;color:#27ae60;">Today's sadhna is filled!</span>
+                </div>
+            </div>`}
+
+            <!-- Activity This Week -->
+            <div class="card" style="padding:20px;margin-top:0;">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+                    <span style="font-size:18px;">📊</span>
+                    <strong style="color:#2c3e50;font-size:15px;">Activity This Week</strong>
+                </div>
+                ${actBarsHtml}
+            </div>
+        `;
+    } catch (err) {
+        container.innerHTML = `<div class="card" style="text-align:center;padding:30px;color:#e74c3c;">
+            <div style="font-size:28px;margin-bottom:8px;">😔</div>
+            <div style="font-weight:600;margin-bottom:6px;">Something went wrong</div>
+            <div style="font-size:13px;color:#888;">Please check your internet connection and try again.</div>
+            <button onclick="loadHomeScreen()" style="width:auto;padding:8px 20px;background:#3498db;color:white;border:none;border-radius:8px;font-weight:600;font-size:13px;cursor:pointer;margin-top:12px;">🔄 Retry</button>
+        </div>`;
+    }
+}
 
 // --- 5. AUTH STATE ---
 auth.onAuthStateChanged(async (user) => {
@@ -202,9 +468,10 @@ auth.onAuthStateChanged(async (user) => {
             document.getElementById('user-display-name').textContent = userProfile.name;
             loadProfilePic();
             setupDateSelect();
-            _reportsLoading = false; // always reset on fresh login (auth fires twice on mobile)
-            _tapahAnswering = false; // reset tapah debounce on login
-            loadReports(currentUser.uid, 'weekly-reports-container');
+            _reportsLoading = false;
+            _tapahAnswering = false;
+            // Show home tab by default
+            switchMainTab('home');
         }
     } else {
         showSection('auth');
@@ -455,20 +722,16 @@ if (sadhanaForm) {
             alert(`${isEdit ? 'Updated' : 'Saved'}! Score: ${total}/175 (${dayPercent}%)`);
             switchTab('reports');
         } catch (error) {
-            alert('Error saving: ' + error.message);
+            alert('Could not save your entry. Please check your internet and try again.');
         }
     };
 }
 
 // --- CHANGE 2: Edit from reports ---
 window.editEntry = async (dateStr) => {
-    // Switch to Daily Entry tab
-    document.querySelectorAll('.tab-content').forEach(el => { el.classList.remove('active'); el.classList.add('hidden'); });
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-    const tabContent = document.getElementById('sadhana-tab');
-    tabContent.classList.remove('hidden'); tabContent.classList.add('active');
-    const btn = document.querySelector(`button[onclick*="switchTab('sadhana')"]`);
-    if (btn) btn.classList.add('active');
+    // Switch to Sadhna > Entry sub-tab
+    switchMainTab('sadhna');
+    switchSubTab('sadhna', 'entry');
 
     // Load existing data
     const snap = await db.collection('users').doc(currentUser.uid).collection('sadhana').doc(dateStr).get();
@@ -524,7 +787,7 @@ function cancelEdit() {
     const banner = document.getElementById('edit-mode-banner');
     if (banner) banner.style.display = 'none';
     const submitBtn = document.getElementById('sadhana-submit-btn');
-    if (submitBtn) submitBtn.textContent = '✅ Submit Sadhana';
+    if (submitBtn) submitBtn.textContent = '✅ Submit Sadhna';
     // Null-guard: elements may not exist yet on first load / mobile slow render
     const mpNoBtn = document.getElementById('mp-no-btn');
     const mpTimeEl = document.getElementById('morning-program-time');
@@ -668,7 +931,7 @@ async function loadReports(userId, containerId) {
             <div style="text-align:center;padding:40px 20px;background:#fff0f0;border-radius:10px;color:#e74c3c;">
                 <div style="font-size:28px;margin-bottom:10px;">⚠️</div>
                 <div style="font-weight:700;margin-bottom:6px;">Could not load reports</div>
-                <div style="font-size:13px;color:#666;margin-bottom:16px;">${err.message}</div>
+                <div style="font-size:13px;color:#666;margin-bottom:16px;">Please check your internet connection and try again.</div>
                 <button onclick="_reportsLoading=false;loadReports('${userId}','${containerId}')"
                     style="padding:10px 24px;background:#3498db;color:white;border:none;border-radius:8px;font-weight:700;font-size:14px;cursor:pointer;width:auto;">
                     🔄 Retry
@@ -858,8 +1121,8 @@ async function loadReports(userId, containerId) {
         html += `
             <div class="week-card ${weekClass}">
                 <div class="week-header" onclick="this.nextElementSibling.classList.toggle('expanded'); this.querySelector('.toggle-icon').textContent = this.nextElementSibling.classList.contains('expanded') ? '▼' : '▶';">
-                    <span>📅 ${week.label.split('_')[0]}</span>
-                    <span style="color:${fairPercent>=50?'#27ae60':'#e74c3c'};">${adjustedTotal}/${fairMax} (${fairPercent}%) <span class="toggle-icon">▶</span></span>
+                    <span>📅 ${week.label.split('_')[0]} ${week.label.split('_')[1] || ''}</span>
+                    <span style="color:${fairPercent>=50?'#27ae60':'#e74c3c'};font-weight:700;">${adjustedTotal} / ${fairMax} (${fairPercent}%) <span class="toggle-icon">▶</span></span>
                 </div>
                 <div class="week-content">
                     <div style="overflow-x:auto;">
@@ -926,8 +1189,8 @@ async function loadReports(userId, containerId) {
                     </table>
                     </div>
                     <div style="margin-top:12px;padding:12px 16px;background:${fairPercent>=50?'#27ae60':'#e74c3c'};color:white;border-radius:8px;text-align:center;">
-                        <strong style="font-size:1.2em;">OVERALL: ${adjustedTotal}/${fairMax} (${fairPercent}%)</strong>
-                        <div style="font-size:11px;opacity:0.85;margin-top:3px;">Based on ${elapsedDays} elapsed days × 175 pts each</div>
+                        <strong style="font-size:1.2em;">${adjustedTotal} / ${fairMax} (${fairPercent}%)</strong>
+                        <div style="font-size:11px;opacity:0.85;margin-top:3px;">${elapsedDays} days × 175 pts</div>
                     </div>
                 </div>
             </div>
@@ -1297,8 +1560,8 @@ function renderScoreRing(percent, dateRange, days, totalPts) {
                 </div>
             </div>
             <div>
-                <div style="font-weight:700;font-size:15px;color:#2c3e50;margin-bottom:4px;">Weekly Score %</div>
-                <div style="font-size:13px;color:#555;margin-bottom:6px;">${dateRange} · ${days} day${days !== 1 ? 's' : ''} · ${totalPts} pts</div>
+                <div style="font-weight:700;font-size:15px;color:#2c3e50;margin-bottom:4px;">Score Summary</div>
+                <div style="font-size:13px;color:#555;margin-bottom:6px;">${days} day${days !== 1 ? 's' : ''} · ${totalPts} pts</div>
                 <div style="font-size:12px;">
                     <span style="color:#27ae60;font-weight:600;">≥70%</span> Good &nbsp;
                     <span style="color:#f39c12;font-weight:600;">50–69%</span> OK &nbsp;
@@ -1331,12 +1594,6 @@ function renderScoreLineChart(labels, scores) {
     const yMin = hasData ? Math.min(-40, Math.min(...realScores) - 10) : -40;
     const yMax = hasData ? Math.max(175, Math.max(...realScores) + 10) : 175;
 
-    const pointColors = scores.map(s => {
-        if (s === null) return 'rgba(200,200,200,0.5)';
-        const pct = s / 175 * 100;
-        return pct >= 70 ? '#27ae60' : pct >= 50 ? '#f39c12' : '#e74c3c';
-    });
-
     scoreChart = new Chart(scoreCtx, {
         type: 'line',
         data: {
@@ -1344,12 +1601,15 @@ function renderScoreLineChart(labels, scores) {
             datasets: [{
                 label: 'Score',
                 data: scores,
-                borderColor: '#3498db',
-                backgroundColor: 'rgba(52,152,219,0.08)',
+                borderColor: '#5b9bd5',
+                backgroundColor: 'rgba(91,155,213,0.10)',
                 borderWidth: 2.5,
-                pointBackgroundColor: pointColors,
-                pointRadius: 5,
-                pointHoverRadius: 7,
+                pointBackgroundColor: '#ffffff',
+                pointBorderColor: '#5b9bd5',
+                pointBorderWidth: 2,
+                pointRadius: 4,
+                pointHoverRadius: 6,
+                pointHoverBackgroundColor: '#5b9bd5',
                 tension: 0.35,
                 fill: true,
                 spanGaps: false,
@@ -1371,6 +1631,7 @@ function renderScoreLineChart(labels, scores) {
                     max: yMax,
                     grid: { color: 'rgba(0,0,0,0.06)' },
                     ticks: {
+                        stepSize: 20,
                         callback: v => v
                     }
                 },
@@ -1389,11 +1650,39 @@ function renderScoreLineChart(labels, scores) {
             ctx2.fillStyle = 'rgba(150,150,150,0.7)';
             ctx2.font = '14px Segoe UI';
             ctx2.textAlign = 'center';
-            ctx2.fillText('No data yet — submit your first Sadhana entry!', canvas.width / 2, canvas.height / 2);
+            ctx2.fillText('No data yet — submit your first Sadhna entry!', canvas.width / 2, canvas.height / 2);
             ctx2.restore();
         }, 100);
     }
 }
+
+// Chart period tab switcher (Daily / Weekly / Monthly buttons)
+window.setChartPeriod = (period) => {
+    const select = document.getElementById('chart-period');
+    if (select) select.value = period;
+    // Update tab button styles
+    document.querySelectorAll('.chart-period-btn').forEach(btn => {
+        btn.style.background = '#f0f0f0';
+        btn.style.color = '#666';
+        btn.style.border = '1px solid #ddd';
+        btn.classList.remove('active');
+    });
+    const activeBtn = document.querySelector(`.chart-period-btn[onclick*="'${period}'"]`);
+    if (activeBtn) {
+        activeBtn.style.background = '#2c3e50';
+        activeBtn.style.color = 'white';
+        activeBtn.style.border = 'none';
+        activeBtn.classList.add('active');
+    }
+    // Update max label
+    const maxLabel = document.getElementById('chart-max-label');
+    if (maxLabel) {
+        if (period === 'daily') maxLabel.textContent = 'Daily max: 175 · Weekly max: 1225';
+        else if (period === 'weekly') maxLabel.textContent = 'Weekly max: 1225';
+        else maxLabel.textContent = '';
+    }
+    generateCharts();
+};
 
 // Activity filter update (called by checkboxes)
 window.updateActivityFilter = () => {
@@ -1415,7 +1704,13 @@ function renderActivityBarChart(activityTotals) {
 
     const filteredKeys = Object.keys(activityTotals).filter(k => enabledActivities.has(k));
     const filteredVals = filteredKeys.map(k => activityTotals[k]);
-    const actColors = filteredVals.map(v => v >= 50 ? '#27ae60' : v >= 0 ? '#f39c12' : '#e74c3c');
+    // Calculate max possible per activity for percentage (based on chart period)
+    const period = document.getElementById('chart-period')?.value || 'daily';
+    let actMaxPerItem = 175; // daily: 28 days × 25 pts but we show raw pts, need to calc %
+    if (period === 'daily') actMaxPerItem = 28 * 25;
+    else if (period === 'weekly') actMaxPerItem = 7 * 25;
+    const filteredPcts = filteredVals.map(v => actMaxPerItem > 0 ? Math.round((v / actMaxPerItem) * 100) : 0);
+    const actColors = filteredPcts.map(p => p >= 70 ? '#27ae60' : p >= 0 ? '#f39c12' : '#e74c3c');
 
     const actCtx = document.getElementById('activity-chart').getContext('2d');
     activityChart = new Chart(actCtx, {
@@ -1423,8 +1718,8 @@ function renderActivityBarChart(activityTotals) {
         data: {
             labels: filteredKeys,
             datasets: [{
-                label: 'Total pts',
-                data: filteredVals,
+                label: '%',
+                data: filteredPcts,
                 backgroundColor: actColors,
                 borderRadius: 5,
                 borderSkipped: false,
@@ -1435,14 +1730,15 @@ function renderActivityBarChart(activityTotals) {
             responsive: true,
             plugins: {
                 legend: { display: false },
-                tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.x} pts` } }
+                tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.x}%` } },
+                datalabels: false
             },
             scales: {
                 x: {
                     beginAtZero: true,
-                    min: -175,
+                    max: 100,
                     grid: { color: 'rgba(0,0,0,0.06)' },
-                    ticks: { callback: v => v + ' pts' }
+                    ticks: { stepSize: 20, callback: v => v + '%' }
                 },
                 y: { grid: { display: false } }
             }
@@ -1790,7 +2086,7 @@ window.submitTapahFromFlash = async () => {
         alert(`${isEdit ? 'Updated' : 'Saved'}! Tapah Score: ${total}/50 (${percent}%)`);
         resetTapahForm();
     } catch (err) {
-        alert('Error saving Tapah: ' + err.message);
+        alert('Could not save Tapah. Please check your internet and try again.');
     }
 };
 
@@ -2043,7 +2339,7 @@ async function loadTapahReport() {
             <div style="text-align:center;padding:30px;background:#fff0f0;border-radius:10px;color:#e74c3c;">
                 <div style="font-size:24px;margin-bottom:8px;">⚠️</div>
                 <div style="font-weight:700;">Could not load Tapah data</div>
-                <div style="font-size:13px;color:#666;margin:6px 0 14px;">${err.message}</div>
+                <div style="font-size:13px;color:#666;margin:6px 0 14px;">Please check your internet connection and try again.</div>
                 <button onclick="loadTapahReport()" style="padding:8px 20px;background:#3498db;color:white;border:none;border-radius:8px;font-weight:700;cursor:pointer;width:auto;">
                     🔄 Retry
                 </button>
@@ -2481,9 +2777,19 @@ function loadProfilePic() {
         img.style.display = 'none';
         placeholder.style.display = 'flex';
     }
-    // Also update dashboard avatar if exists
+    // Also update dashboard avatar
     const dashAvatar = document.getElementById('dashboard-avatar');
-    if (dashAvatar && pic) { dashAvatar.src = pic; dashAvatar.style.display = 'block'; }
+    const dashPlaceholder = document.getElementById('dashboard-avatar-placeholder');
+    if (dashAvatar && dashPlaceholder) {
+        if (pic) {
+            dashAvatar.src = pic;
+            dashAvatar.style.display = 'block';
+            dashPlaceholder.style.display = 'none';
+        } else {
+            dashAvatar.style.display = 'none';
+            dashPlaceholder.style.display = 'flex';
+        }
+    }
 }
 
 window.handleProfilePicChange = async (input) => {
