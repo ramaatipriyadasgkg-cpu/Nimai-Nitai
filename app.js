@@ -20,6 +20,9 @@ let scoreChart = null, activityChart = null;
 let editingDate = null;
 
 // --- 2. HELPERS ---
+// App start date — days before this date are not penalised as NR (app didn't exist yet)
+const APP_START_DATE = '2026-03-27';
+
 // Local date helpers — avoids toISOString() UTC bug
 // (IST users between midnight–5:30 AM would get yesterday's date with toISOString)
 function toLocalDateStr(date) {
@@ -53,103 +56,21 @@ function getNRData(date) {
         id: date, totalScore: -40, dayPercent: -23,
         sleepTime: "NR", wakeupTime: "NR", morningProgramTime: "NR", chantingTime: "NR",
         readingMinutes: "NR", hearingMinutes: "NR", notesMinutes: "NR", daySleepMinutes: "NR",
-        scores: { sleep: -5, wakeup: -5, morningProgram: -5, chanting: -5, reading: -5, hearing: -5, notes: -5, daySleep: 0 }
+        scores: { sleep: -5, wakeup: -5, morningProgram: -5, chanting: -5, reading: -5, hearing: -5, notes: -5, daySleep: -5 }
     };
 }
 
 // --- 3. DOWNLOAD EXCEL LOGIC ---
 window.downloadUserExcel = async (userId, userName) => {
     try {
-        if (typeof XLSX === 'undefined') {
-            alert("Excel Library not loaded. Please wait 2 seconds and try again.");
-            return;
-        }
-
+        if (typeof XLSX === 'undefined') { alert("Excel Library not loaded. Please wait 2 seconds and try again."); return; }
         const snap = await db.collection('users').doc(userId).collection('sadhana').get();
-        if (snap.empty) {
-            alert("No data found to download.");
-            return;
-        }
-
-        const weeksData = {};
-        snap.forEach(doc => {
-            const weekInfo = getWeekInfo(doc.id);
-            if (!weeksData[weekInfo.sunStr]) {
-                weeksData[weekInfo.sunStr] = { label: weekInfo.label, sunStr: weekInfo.sunStr, days: {} };
-            }
-            weeksData[weekInfo.sunStr].days[doc.id] = doc.data();
-        });
-
-        const sortedWeeks = Object.keys(weeksData).sort((a, b) => b.localeCompare(a));
-        const dataArray = [];
-
-        sortedWeeks.forEach((sunStr, weekIndex) => {
-            const week = weeksData[sunStr];
-            dataArray.push([`WEEK: ${week.label}`, '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']);
-            dataArray.push(['Day', '1.To Bed', 'Mks', '2. Wake Up', 'Mks', '3. Japa', 'Mks', '4. MP', 'Mks', '5. DS', 'Mks', '6. Pathan', 'Mks', '7. Sarwan', 'Mks', '8. Ntes Rev.', 'Mks', 'Day Wise']);
-
-            let weekTotals = { sleepM: 0, wakeupM: 0, morningProgramM: 0, chantingM: 0, readingM: 0, hearingM: 0, notesM: 0, daySleepM: 0, readingMins: 0, hearingMins: 0, notesMins: 0, daySleepMins: 0, total: 0 };
-            const weekStart = new Date(week.sunStr + 'T00:00:00');
-            const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-            for (let i = 0; i < 7; i++) {
-                const currentDate = new Date(weekStart);
-                currentDate.setDate(currentDate.getDate() + i);
-                const dateStr = toLocalDateStr(currentDate);
-                const dayLabel = `${dayNames[i]} ${String(currentDate.getDate()).padStart(2, '0')}`;
-                const entry = week.days[dateStr] || getNRData(dateStr);
-
-                const readMins = entry.readingMinutes === 'NR' ? 0 : (entry.readingMinutes || 0);
-                const hearMins = entry.hearingMinutes === 'NR' ? 0 : (entry.hearingMinutes || 0);
-                const notesMins = entry.notesMinutes === 'NR' ? 0 : (entry.notesMinutes || 0);
-
-                weekTotals.sleepM += entry.scores?.sleep ?? 0;
-                weekTotals.wakeupM += entry.scores?.wakeup ?? 0;
-                weekTotals.morningProgramM += entry.scores?.morningProgram ?? 0;
-                weekTotals.chantingM += entry.scores?.chanting ?? 0;
-                weekTotals.readingM += entry.scores?.reading ?? 0;
-                weekTotals.hearingM += entry.scores?.hearing ?? 0;
-                weekTotals.notesM += entry.scores?.notes ?? 0;
-                weekTotals.daySleepM += entry.scores?.daySleep ?? 0;
-                weekTotals.readingMins += readMins;
-                weekTotals.hearingMins += hearMins;
-                weekTotals.notesMins += notesMins;
-                weekTotals.total += entry.totalScore ?? 0;
-
-                dataArray.push([
-                    dayLabel, entry.sleepTime || 'NR', entry.scores?.sleep ?? 0,
-                    entry.wakeupTime || 'NR', entry.scores?.wakeup ?? 0,
-                    entry.chantingTime || 'NR', entry.scores?.chanting ?? 0,
-                    entry.morningProgramTime || 'NR', entry.scores?.morningProgram ?? 0,
-                    entry.daySleepMinutes !== 'NR' ? entry.daySleepMinutes : 'NR', entry.scores?.daySleep ?? 0,
-                    entry.readingMinutes !== 'NR' ? entry.readingMinutes : 'NR', entry.scores?.reading ?? 0,
-                    entry.hearingMinutes !== 'NR' ? entry.hearingMinutes : 'NR', entry.scores?.hearing ?? 0,
-                    entry.notesMinutes !== 'NR' ? entry.notesMinutes : 'NR', entry.scores?.notes ?? 0,
-                    (entry.dayPercent ?? 0) + '%'
-                ]);
-            }
-
-            let adjustedNotesM = weekTotals.notesM;
-            if (weekTotals.notesMins >= 245) adjustedNotesM = 175;
-            const adjustedTotal = weekTotals.total - weekTotals.notesM + adjustedNotesM;
-            const weekPercent = Math.round((adjustedTotal / 1225) * 100);
-
-            dataArray.push(['Total/1225', '', weekTotals.sleepM, '', weekTotals.wakeupM, '', weekTotals.chantingM, '', weekTotals.morningProgramM, '', weekTotals.daySleepM, weekTotals.readingMins, weekTotals.readingM, weekTotals.hearingMins, weekTotals.hearingM, weekTotals.notesMins, adjustedNotesM, '']);
-            dataArray.push(['Sadhna %', '', Math.round((weekTotals.sleepM/175)*100)+'%', '', Math.round((weekTotals.wakeupM/175)*100)+'%', '', Math.round((weekTotals.chantingM/175)*100)+'%', '', Math.round((weekTotals.morningProgramM/175)*100)+'%', '', Math.round((weekTotals.daySleepM/70)*100)+'%', '', Math.round((weekTotals.readingM/175)*100)+'%', '', Math.round((weekTotals.hearingM/175)*100)+'%', '', Math.round((adjustedNotesM/175)*100)+'%', '']);
-            dataArray.push(['OVERALL', weekPercent + '%', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']);
-
-            if (weekIndex < sortedWeeks.length - 1) {
-                dataArray.push(['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']);
-                dataArray.push(['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']);
-            }
-        });
-
-        const worksheet = XLSX.utils.aoa_to_sheet(dataArray);
-        worksheet['!cols'] = [{wch:10},{wch:8},{wch:4},{wch:8},{wch:4},{wch:8},{wch:4},{wch:8},{wch:4},{wch:10},{wch:4},{wch:10},{wch:4},{wch:10},{wch:4},{wch:12},{wch:4},{wch:8},{wch:6}];
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, 'Sadhna History');
-        XLSX.writeFile(workbook, `${userName}_Sadhna_History.xlsx`);
-    } catch (error) {
+        if (snap.empty) { alert("No data found to download."); return; }
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, _buildSadhnaWs(snap), 'Sadhna History');
+        XLSX.writeFile(wb, `${userName}_Sadhna_History.xlsx`);
+    } catch (err) {
+        console.error(err);
         alert("Could not download Excel. Please check your internet connection and try again.");
     }
 };
@@ -417,6 +338,593 @@ window.importExcelFile = async (input) => {
     }
 };
 
+// --- 3C. TAPAH EXCEL DOWNLOAD ---
+window.downloadTapahExcel = async () => {
+    if (!currentUser) { alert('Please login first.'); return; }
+    if (typeof XLSX === 'undefined') { alert('Excel library not loaded yet. Please wait and try again.'); return; }
+    try {
+        const snap = await db.collection('users').doc(currentUser.uid).collection('tapah').get();
+        if (snap.empty) { alert('No Tapah data found to download.'); return; }
+        const docs = [];
+        snap.forEach(doc => docs.push({ id: doc.id, ...doc.data() }));
+        docs.sort((a,b) => a.id.localeCompare(b.id));
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, _buildTapahWs(docs), 'Tapah History');
+        XLSX.writeFile(wb, `${userProfile?.name || 'My'}_Tapah_History.xlsx`);
+    } catch (err) {
+        alert('Could not download. Error: ' + (err.code || err.message));
+    }
+};
+// ── Tapah worksheet builder ────────────────────────────────────────
+function _buildTapahWs(docs) {
+        const dates   = docs.map(d => d.id);
+        const numCols = 2 + dates.length + 2;
+
+        const thinGrey  = { style: 'thin',   color: { rgb: 'BBBBBB' } };
+        const medDark   = { style: 'medium',  color: { rgb: '555555' } };
+        const medGreen  = { style: 'medium',  color: { rgb: '1A7A3C' } };
+        const medRed    = { style: 'medium',  color: { rgb: 'A93226' } };
+        const medNavy   = { style: 'medium',  color: { rgb: '1E4D8C' } };
+        const allThin   = { top: thinGrey, bottom: thinGrey, left: thinGrey, right: thinGrey };
+        const allMedDrk = { top: medDark,  bottom: medDark,  left: medDark,  right: medDark  };
+
+        const S = {
+            header:    { font:{ bold:true, sz:11, color:{ rgb:'FFFFFF' } }, fill:{ patternType:'solid', fgColor:{ rgb:'2C3E50' } }, alignment:{ horizontal:'center', vertical:'center', wrapText:true }, border: allMedDrk },
+            hdrLabel:  { font:{ bold:true, sz:11, color:{ rgb:'FFFFFF' } }, fill:{ patternType:'solid', fgColor:{ rgb:'2C3E50' } }, alignment:{ horizontal:'left',   vertical:'center', wrapText:true }, border: allMedDrk },
+            anuHdr:    { font:{ bold:true, sz:12, color:{ rgb:'FFFFFF' } }, fill:{ patternType:'solid', fgColor:{ rgb:'1D6A39' } }, alignment:{ horizontal:'left',   vertical:'center' }, border:{ top:medGreen, bottom:medGreen, left:medGreen, right:medGreen } },
+            anuHdrC:   { font:{ bold:true, sz:12, color:{ rgb:'FFFFFF' } }, fill:{ patternType:'solid', fgColor:{ rgb:'1D6A39' } }, alignment:{ horizontal:'center', vertical:'center' }, border:{ top:medGreen, bottom:medGreen, left:medGreen, right:medGreen } },
+            praHdr:    { font:{ bold:true, sz:12, color:{ rgb:'FFFFFF' } }, fill:{ patternType:'solid', fgColor:{ rgb:'922B21' } }, alignment:{ horizontal:'left',   vertical:'center' }, border:{ top:medRed,   bottom:medRed,   left:medRed,   right:medRed   } },
+            praHdrC:   { font:{ bold:true, sz:12, color:{ rgb:'FFFFFF' } }, fill:{ patternType:'solid', fgColor:{ rgb:'922B21' } }, alignment:{ horizontal:'center', vertical:'center' }, border:{ top:medRed,   bottom:medRed,   left:medRed,   right:medRed   } },
+            qLabel:    { font:{ sz:10, color:{ rgb:'2C3E50' } }, fill:{ patternType:'solid', fgColor:{ rgb:'F4FBF7' } }, alignment:{ horizontal:'left',   vertical:'center' }, border: allThin },
+            qCell:     { font:{ sz:10, color:{ rgb:'2C3E50' } }, fill:{ patternType:'solid', fgColor:{ rgb:'F4FBF7' } }, alignment:{ horizontal:'center', vertical:'center' }, border: allThin },
+            qLabelR:   { font:{ sz:10, color:{ rgb:'2C3E50' } }, fill:{ patternType:'solid', fgColor:{ rgb:'FDF3F2' } }, alignment:{ horizontal:'left',   vertical:'center' }, border: allThin },
+            qCellR:    { font:{ sz:10, color:{ rgb:'2C3E50' } }, fill:{ patternType:'solid', fgColor:{ rgb:'FDF3F2' } }, alignment:{ horizontal:'center', vertical:'center' }, border: allThin },
+            subGreen:  { font:{ bold:true, sz:10, color:{ rgb:'FFFFFF' } }, fill:{ patternType:'solid', fgColor:{ rgb:'27AE60' } }, alignment:{ horizontal:'center', vertical:'center' }, border:{ top:medGreen, bottom:medGreen, left:medGreen, right:medGreen } },
+            subGreenL: { font:{ bold:true, sz:10, color:{ rgb:'FFFFFF' } }, fill:{ patternType:'solid', fgColor:{ rgb:'27AE60' } }, alignment:{ horizontal:'left',   vertical:'center' }, border:{ top:medGreen, bottom:medGreen, left:medGreen, right:medGreen } },
+            subRed:    { font:{ bold:true, sz:10, color:{ rgb:'FFFFFF' } }, fill:{ patternType:'solid', fgColor:{ rgb:'E74C3C' } }, alignment:{ horizontal:'center', vertical:'center' }, border:{ top:medRed,   bottom:medRed,   left:medRed,   right:medRed   } },
+            subRedL:   { font:{ bold:true, sz:10, color:{ rgb:'FFFFFF' } }, fill:{ patternType:'solid', fgColor:{ rgb:'E74C3C' } }, alignment:{ horizontal:'left',   vertical:'center' }, border:{ top:medRed,   bottom:medRed,   left:medRed,   right:medRed   } },
+            gtLabel:   { font:{ bold:true, sz:11, color:{ rgb:'FFFFFF' } }, fill:{ patternType:'solid', fgColor:{ rgb:'1A5276' } }, alignment:{ horizontal:'left',   vertical:'center' }, border:{ top:medNavy,  bottom:medNavy,  left:medNavy,  right:medNavy  } },
+            gtCell:    { font:{ bold:true, sz:11, color:{ rgb:'FFFFFF' } }, fill:{ patternType:'solid', fgColor:{ rgb:'1A5276' } }, alignment:{ horizontal:'center', vertical:'center' }, border:{ top:medNavy,  bottom:medNavy,  left:medNavy,  right:medNavy  } },
+            pctLabel:  { font:{ bold:true, sz:11, color:{ rgb:'FFFFFF' } }, fill:{ patternType:'solid', fgColor:{ rgb:'117A65' } }, alignment:{ horizontal:'left',   vertical:'center' }, border:{ top:medNavy,  bottom:medNavy,  left:medNavy,  right:medNavy  } },
+            pctCell:   { font:{ bold:true, sz:11, color:{ rgb:'FFFFFF' } }, fill:{ patternType:'solid', fgColor:{ rgb:'117A65' } }, alignment:{ horizontal:'center', vertical:'center' }, border:{ top:medNavy,  bottom:medNavy,  left:medNavy,  right:medNavy  } },
+        };
+
+        // ── Build rows + metadata ──────────────────────
+        const rows    = [];
+        const rowMeta = [];
+
+        rows.push(['Question', 'Max/day', ...dates, 'Total Obtained', 'Total Max']);
+        rowMeta.push({ type:'header', h:22 });
+
+        // Anukul section
+        rows.push(['🌿  ANUKULASYA (Favourable)', '', ...dates.map(()=>''), '', '']);
+        rowMeta.push({ type:'anuHdr', h:20 });
+
+        ANUKUL_QUESTIONS.forEach(q => {
+            let rowTotal = 0;
+            const cells = docs.map(d => {
+                const val = d.anukul?.[q.id] || 'no';
+                const sc  = getAanukulScore(val);
+                rowTotal += sc;
+                return `${val==='yes'?'Y':val==='partial'?'P':'N'} (${sc>=0?'+':''}${sc})`;
+            });
+            rows.push([`    ${q.label}`, 5, ...cells, rowTotal, docs.length * 5]);
+            rowMeta.push({ type:'qAnukul', h:16 });
+        });
+
+        rows.push(['🌿  Anukul Total', 25,
+            ...docs.map(d => d.anukulTotal ?? 0),
+            docs.reduce((s,d) => s+(d.anukulTotal ?? 0), 0), docs.length * 25]);
+        rowMeta.push({ type:'subAnukul', h:18 });
+
+        // Spacer
+        rows.push(Array(numCols).fill(''));
+        rowMeta.push({ type:'spacer', h:6 });
+
+        // Pratikul section
+        rows.push(['🚫  PRATIKULASYA (Unfavourable)', '', ...dates.map(()=>''), '', '']);
+        rowMeta.push({ type:'praHdr', h:20 });
+
+        PRATIKUL_QUESTIONS.forEach(q => {
+            let rowTotal = 0;
+            const cells = docs.map(d => {
+                const val = d.pratikul?.[q.id] || 'no';
+                const sc  = getPratikulScore(val);
+                rowTotal += sc;
+                return `${val==='yes'?'Y':val==='partial'?'P':'N'} (${sc>=0?'+':''}${sc})`;
+            });
+            rows.push([`    ${q.label}`, 5, ...cells, rowTotal, docs.length * 5]);
+            rowMeta.push({ type:'qPratikul', h:16 });
+        });
+
+        rows.push(['🚫  Pratikul Total', 25,
+            ...docs.map(d => d.pratikulTotal ?? 0),
+            docs.reduce((s,d) => s+(d.pratikulTotal ?? 0), 0), docs.length * 25]);
+        rowMeta.push({ type:'subPratikul', h:18 });
+
+        // Spacer
+        rows.push(Array(numCols).fill(''));
+        rowMeta.push({ type:'spacer', h:6 });
+
+        // Grand total / percent
+        rows.push(['Grand Total', 50,
+            ...docs.map(d => d.totalScore ?? 0),
+            docs.reduce((s,d) => s+(d.totalScore ?? 0), 0), docs.length * 50]);
+        rowMeta.push({ type:'grandTotal', h:20 });
+
+        rows.push(['Percent', '100%', ...docs.map(d => (d.percent ?? 0)+'%'), '', '']);
+        rowMeta.push({ type:'percent', h:18 });
+
+        // ── Build worksheet ────────────────────────────
+        const ws = XLSX.utils.aoa_to_sheet(rows);
+
+        // ── Apply styles ───────────────────────────────
+        rows.forEach((row, ri) => {
+            const meta = rowMeta[ri];
+            for (let ci = 0; ci < numCols; ci++) {
+                const addr = XLSX.utils.encode_cell({ r: ri, c: ci });
+                if (!ws[addr]) ws[addr] = { v: '', t: 's' };
+                const isLabel = ci === 0;
+                switch (meta.type) {
+                    case 'header':     ws[addr].s = isLabel ? S.hdrLabel  : S.header;    break;
+                    case 'anuHdr':     ws[addr].s = isLabel ? S.anuHdr    : S.anuHdrC;   break;
+                    case 'qAnukul':    ws[addr].s = isLabel ? S.qLabel    : S.qCell;     break;
+                    case 'subAnukul':  ws[addr].s = isLabel ? S.subGreenL : S.subGreen;  break;
+                    case 'praHdr':     ws[addr].s = isLabel ? S.praHdr    : S.praHdrC;   break;
+                    case 'qPratikul':  ws[addr].s = isLabel ? S.qLabelR   : S.qCellR;    break;
+                    case 'subPratikul':ws[addr].s = isLabel ? S.subRedL   : S.subRed;    break;
+                    case 'grandTotal': ws[addr].s = isLabel ? S.gtLabel   : S.gtCell;    break;
+                    case 'percent':    ws[addr].s = isLabel ? S.pctLabel  : S.pctCell;   break;
+                    default: break; // spacer
+                }
+            }
+        });
+
+        ws['!cols'] = [{ wch: 44 }, { wch: 8 }, ...dates.map(() => ({ wch: 14 })), { wch: 14 }, { wch: 10 }];
+        ws['!rows'] = rowMeta.map(m => ({ hpt: m.h }));
+        return ws;
+}
+
+// --- 3D. TAPAH EXCEL IMPORT ---
+window.importTapahExcel = async (input) => {
+    if (!input.files || !input.files[0]) return;
+    if (!currentUser) { alert('Please login first.'); return; }
+    if (typeof XLSX === 'undefined') { alert('Excel library not loaded yet.'); return; }
+
+    const file = input.files[0];
+    input.value = '';
+
+    try {
+        const data = await file.arrayBuffer();
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+        if (!rows || rows.length < 2) { alert('File appears empty or wrong format.'); return; }
+
+        const headerRow = rows[0].map(c => String(c || '').trim());
+        const dateCol = 0;
+        // Map question label → column index
+        const colMap = {};
+        headerRow.forEach((h, i) => { colMap[h] = i; });
+
+        const entries = [];
+        for (let r = 1; r < rows.length; r++) {
+            const row = rows[r];
+            if (!row || !row[dateCol]) continue;
+            const dateStr = String(row[dateCol]).trim();
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) continue;
+
+            const anukulAnswers = {}, pratikulAnswers = {}, anukulScores = {}, pratikulScores = {};
+            let anukulTotal = 0, pratikulTotal = 0;
+
+            ANUKUL_QUESTIONS.forEach(q => {
+                const ci = colMap[q.label];
+                const val = ci !== undefined && row[ci] ? String(row[ci]).trim().toLowerCase() : 'no';
+                const clean = ['yes','partial','no'].includes(val) ? val : 'no';
+                anukulAnswers[q.id] = clean;
+                anukulScores[q.id] = getAanukulScore(clean);
+                anukulTotal += anukulScores[q.id];
+            });
+            PRATIKUL_QUESTIONS.forEach(q => {
+                const ci = colMap[q.label];
+                const val = ci !== undefined && row[ci] ? String(row[ci]).trim().toLowerCase() : 'no';
+                const clean = ['yes','partial','no'].includes(val) ? val : 'no';
+                pratikulAnswers[q.id] = clean;
+                pratikulScores[q.id] = getPratikulScore(clean);
+                pratikulTotal += pratikulScores[q.id];
+            });
+
+            const total = anukulTotal + pratikulTotal;
+            entries.push({ dateStr, data: {
+                anukul: anukulAnswers, pratikul: pratikulAnswers,
+                anukulScores, pratikulScores, anukulTotal, pratikulTotal,
+                totalScore: total, percent: Math.round((total / 50) * 100),
+                submittedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                importedFromExcel: true
+            }});
+        }
+
+        if (entries.length === 0) { alert('No valid Tapah entries found. Make sure you are using the exported format.'); return; }
+        entries.sort((a, b) => a.dateStr.localeCompare(b.dateStr));
+        const confirmed = confirm(`Found ${entries.length} Tapah entries (${entries[0].dateStr} to ${entries[entries.length-1].dateStr}).\n\nExisting entries will be overwritten. Continue?`);
+        if (!confirmed) return;
+
+        const modal = document.createElement('div');
+        modal.id = 'import-progress-modal';
+        modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+        modal.innerHTML = `<div style="background:white;border-radius:14px;max-width:340px;width:100%;padding:28px;text-align:center;">
+            <div style="font-size:36px;margin-bottom:10px;">📤</div>
+            <div style="font-weight:700;font-size:16px;color:#2c3e50;margin-bottom:8px;">Importing Tapah...</div>
+            <div id="import-progress-text" style="font-size:13px;color:#888;">0 / ${entries.length}</div>
+            <div style="margin-top:12px;background:#eee;border-radius:6px;height:8px;overflow:hidden;">
+                <div id="import-progress-bar" style="width:0%;height:100%;background:#764ba2;border-radius:6px;transition:width 0.3s;"></div>
+            </div></div>`;
+        document.body.appendChild(modal);
+
+        let imported = 0;
+        for (let i = 0; i < entries.length; i += 400) {
+            const batch = db.batch();
+            entries.slice(i, i + 400).forEach(e => {
+                batch.set(db.collection('users').doc(currentUser.uid).collection('tapah').doc(e.dateStr), e.data);
+            });
+            await batch.commit();
+            imported += Math.min(400, entries.length - i);
+            const pt = document.getElementById('import-progress-text');
+            const pb = document.getElementById('import-progress-bar');
+            if (pt) pt.textContent = `${imported} / ${entries.length}`;
+            if (pb) pb.style.width = Math.round((imported / entries.length) * 100) + '%';
+        }
+
+        modal.innerHTML = `<div style="background:white;border-radius:14px;max-width:340px;width:100%;padding:28px;text-align:center;">
+            <div style="font-size:36px;margin-bottom:10px;">✅</div>
+            <div style="font-weight:700;font-size:16px;color:#27ae60;margin-bottom:8px;">Import Complete!</div>
+            <div style="font-size:13px;color:#888;margin-bottom:16px;">${imported} Tapah entries imported.</div>
+            <button onclick="document.getElementById('import-progress-modal').remove();loadTapahReport();"
+                style="padding:10px 24px;background:#764ba2;color:white;border:none;border-radius:8px;font-weight:700;font-size:14px;cursor:pointer;width:auto;">OK</button></div>`;
+    } catch (err) {
+        const m = document.getElementById('import-progress-modal');
+        if (m) m.remove();
+        alert('Could not import file. Error: ' + (err.code || err.message));
+    }
+};
+
+// --- 3E. TAPAH-2 EXCEL DOWNLOAD ---
+window.downloadTapah2Excel = async () => {
+    if (!currentUser) { alert('Please login first.'); return; }
+    if (typeof XLSX === 'undefined') { alert('Excel library not loaded yet.'); return; }
+    try {
+        const snap = await db.collection('users').doc(currentUser.uid).collection('tapah2').get();
+        if (snap.empty) { alert('No Tapah-2 data found to download.'); return; }
+        const docs = [];
+        snap.forEach(doc => docs.push({ id: doc.id, ...doc.data() }));
+        docs.sort((a,b) => a.id.localeCompare(b.id));
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, _buildTapah2Ws(docs), 'Tapah-2 History');
+        XLSX.writeFile(wb, `${userProfile?.name || 'My'}_Tapah2_History.xlsx`);
+    } catch (err) {
+        alert('Could not download. Error: ' + (err.code || err.message));
+    }
+};
+
+// ── Tapah-2 worksheet builder ──────────────────────────────────────
+function _buildTapah2Ws(docs) {
+        const dates = docs.map(d => d.id);
+        const numCols = 2 + dates.length + 2;
+
+        // ── Style helpers ──────────────────────────────
+        const thinGrey   = { style: 'thin',   color: { rgb: 'BBBBBB' } };
+        const medDark    = { style: 'medium',  color: { rgb: '555555' } };
+        const medOrange  = { style: 'medium',  color: { rgb: 'CC5500' } };
+        const medGreen   = { style: 'medium',  color: { rgb: '1E8449' } };
+        const allThin    = { top: thinGrey, bottom: thinGrey, left: thinGrey, right: thinGrey };
+        const allMedDark = { top: medDark,  bottom: medDark,  left: medDark,  right: medDark  };
+
+        const S = {
+            header:      { font: { bold:true, sz:11, color:{ rgb:'FFFFFF' } }, fill:{ patternType:'solid', fgColor:{ rgb:'2C3E50' } }, alignment:{ horizontal:'center', vertical:'center', wrapText:true }, border: allMedDark },
+            headerLabel: { font: { bold:true, sz:11, color:{ rgb:'FFFFFF' } }, fill:{ patternType:'solid', fgColor:{ rgb:'2C3E50' } }, alignment:{ horizontal:'left',   vertical:'center', wrapText:true }, border: allMedDark },
+            catHdr:      { font: { bold:true, sz:12, color:{ rgb:'FFFFFF' } }, fill:{ patternType:'solid', fgColor:{ rgb:'D35400' } }, alignment:{ horizontal:'left',   vertical:'center' }, border:{ top:medOrange, bottom:medOrange, left:medOrange, right:medOrange } },
+            catHdrC:     { font: { bold:true, sz:12, color:{ rgb:'FFFFFF' } }, fill:{ patternType:'solid', fgColor:{ rgb:'D35400' } }, alignment:{ horizontal:'center', vertical:'center' }, border:{ top:medOrange, bottom:medOrange, left:medOrange, right:medOrange } },
+            qLabel:      { font: { sz:10, color:{ rgb:'2C3E50' } }, fill:{ patternType:'solid', fgColor:{ rgb:'FEF9F5' } }, alignment:{ horizontal:'left',   vertical:'center' }, border: allThin },
+            qCell:       { font: { sz:10, color:{ rgb:'2C3E50' } }, fill:{ patternType:'solid', fgColor:{ rgb:'FEF9F5' } }, alignment:{ horizontal:'center', vertical:'center' }, border: allThin },
+            subLabel:    { font: { bold:true, sz:10, color:{ rgb:'FFFFFF' } }, fill:{ patternType:'solid', fgColor:{ rgb:'E67E22' } }, alignment:{ horizontal:'left',   vertical:'center' }, border:{ top:medOrange, bottom:medOrange, left:medOrange, right:medOrange } },
+            subCell:     { font: { bold:true, sz:10, color:{ rgb:'FFFFFF' } }, fill:{ patternType:'solid', fgColor:{ rgb:'E67E22' } }, alignment:{ horizontal:'center', vertical:'center' }, border:{ top:medOrange, bottom:medOrange, left:medOrange, right:medOrange } },
+            gtLabel:     { font: { bold:true, sz:11, color:{ rgb:'FFFFFF' } }, fill:{ patternType:'solid', fgColor:{ rgb:'1A5276' } }, alignment:{ horizontal:'left',   vertical:'center' }, border:{ top:medGreen,  bottom:medGreen,  left:medGreen,  right:medGreen  } },
+            gtCell:      { font: { bold:true, sz:11, color:{ rgb:'FFFFFF' } }, fill:{ patternType:'solid', fgColor:{ rgb:'1A5276' } }, alignment:{ horizontal:'center', vertical:'center' }, border:{ top:medGreen,  bottom:medGreen,  left:medGreen,  right:medGreen  } },
+            pctLabel:    { font: { bold:true, sz:11, color:{ rgb:'FFFFFF' } }, fill:{ patternType:'solid', fgColor:{ rgb:'117A65' } }, alignment:{ horizontal:'left',   vertical:'center' }, border:{ top:medGreen,  bottom:medGreen,  left:medGreen,  right:medGreen  } },
+            pctCell:     { font: { bold:true, sz:11, color:{ rgb:'FFFFFF' } }, fill:{ patternType:'solid', fgColor:{ rgb:'117A65' } }, alignment:{ horizontal:'center', vertical:'center' }, border:{ top:medGreen,  bottom:medGreen,  left:medGreen,  right:medGreen  } },
+        };
+
+        // ── Build rows + row-type metadata ─────────────
+        const rows    = [];
+        const rowMeta = []; // each entry: { type, colStyles[] }
+
+        // Header
+        rows.push(['Question / Category', 'Max', ...dates, 'Total Obtained', 'Total Max']);
+        rowMeta.push({ type:'header', h: 22 });
+
+        TAPAH2_CATS.forEach(cat => {
+            const catQs       = TAPAH2_QUESTIONS.filter(q => q.cat === cat.id);
+            const catMaxPerDay = catQs.reduce((s,q) => s+q.max, 0);
+
+            // Category header row
+            rows.push([`${cat.emoji}  ${cat.label}`, catMaxPerDay, ...dates.map(()=>''), '', '']);
+            rowMeta.push({ type:'catHdr', h: 20 });
+
+            catQs.forEach(q => {
+                let rowTotal = 0;
+                const cells = docs.map(d => {
+                    const sc = d.scores?.[q.id] !== undefined ? d.scores[q.id] : 0;
+                    rowTotal += sc;
+                    return sc;
+                });
+                rows.push([`    ${q.label}`, q.max, ...cells, rowTotal, docs.length * q.max]);
+                rowMeta.push({ type:'question', h: 16 });
+            });
+
+            // Category subtotal row
+            const catTotals = docs.map(d => catQs.reduce((s,q) => s + (d.scores?.[q.id] !== undefined ? d.scores[q.id] : 0), 0));
+            rows.push([`${cat.emoji}  ${cat.label} — Subtotal`, catMaxPerDay,
+                ...catTotals,
+                catTotals.reduce((a,b)=>a+b,0), docs.length * catMaxPerDay]);
+            rowMeta.push({ type:'subTotal', h: 18 });
+
+            // Spacer
+            rows.push(Array(numCols).fill(''));
+            rowMeta.push({ type:'spacer', h: 6 });
+        });
+
+        // Grand total
+        rows.push(['Grand Total', TAPAH2_MAX,
+            ...docs.map(d => d.totalScore !== undefined ? d.totalScore : 0),
+            docs.reduce((s,d)=>s+(d.totalScore!==undefined?d.totalScore:0),0),
+            docs.length * TAPAH2_MAX]);
+        rowMeta.push({ type:'grandTotal', h: 20 });
+
+        // Percent
+        rows.push(['Percent', '100%',
+            ...docs.map(d => (d.percent !== undefined ? d.percent : 0) + '%'),
+            '', '']);
+        rowMeta.push({ type:'percent', h: 18 });
+
+        // ── Build worksheet ────────────────────────────
+        const ws = XLSX.utils.aoa_to_sheet(rows);
+
+        // ── Apply styles ───────────────────────────────
+        rows.forEach((row, ri) => {
+            const meta = rowMeta[ri];
+            for (let ci = 0; ci < numCols; ci++) {
+                const addr = XLSX.utils.encode_cell({ r: ri, c: ci });
+                if (!ws[addr]) ws[addr] = { v: '', t: 's' };
+                const isLabel = ci === 0;
+                const isMax   = ci === 1;
+                switch (meta.type) {
+                    case 'header':    ws[addr].s = isLabel ? S.headerLabel : S.header;    break;
+                    case 'catHdr':    ws[addr].s = isLabel ? S.catHdr      : S.catHdrC;   break;
+                    case 'question':  ws[addr].s = isLabel ? S.qLabel      : S.qCell;     break;
+                    case 'subTotal':  ws[addr].s = isLabel ? S.subLabel    : S.subCell;   break;
+                    case 'grandTotal':ws[addr].s = isLabel ? S.gtLabel     : S.gtCell;    break;
+                    case 'percent':   ws[addr].s = isLabel ? S.pctLabel    : S.pctCell;   break;
+                    default: break; // spacer — no style
+                }
+            }
+        });
+
+        ws['!cols'] = [{ wch: 46 }, { wch: 7 }, ...dates.map(() => ({ wch: 11 })), { wch: 14 }, { wch: 10 }];
+        ws['!rows'] = rowMeta.map(m => ({ hpt: m.h }));
+        return ws;
+}
+
+// --- 3F. TAPAH-2 EXCEL IMPORT ---
+window.importTapah2Excel = async (input) => {
+    if (!input.files || !input.files[0]) return;
+    if (!currentUser) { alert('Please login first.'); return; }
+    if (typeof XLSX === 'undefined') { alert('Excel library not loaded yet.'); return; }
+
+    const file = input.files[0];
+    input.value = '';
+
+    try {
+        const data = await file.arrayBuffer();
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+        if (!rows || rows.length < 2) { alert('File appears empty or wrong format.'); return; }
+
+        const headerRow = rows[0].map(c => String(c || '').trim());
+        // Build map: question column header → question id
+        const qColMap = {};
+        TAPAH2_QUESTIONS.forEach(q => {
+            const expectedHeader = `${q.catLabel} | ${q.label} (max ${q.max})`;
+            const idx = headerRow.indexOf(expectedHeader);
+            if (idx >= 0) qColMap[q.id] = idx;
+        });
+
+        const entries = [];
+        for (let r = 1; r < rows.length; r++) {
+            const row = rows[r];
+            if (!row || !row[0]) continue;
+            const dateStr = String(row[0]).trim();
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) continue;
+
+            const scores = {};
+            let total = 0;
+            TAPAH2_QUESTIONS.forEach(q => {
+                const ci = qColMap[q.id];
+                const raw = ci !== undefined && row[ci] !== undefined ? parseInt(row[ci], 10) : 0;
+                const val = isNaN(raw) ? 0 : Math.max(0, Math.min(q.max, raw));
+                scores[q.id] = val;
+                total += val;
+            });
+
+            entries.push({ dateStr, data: {
+                scores, totalScore: total,
+                percent: Math.round((total / TAPAH2_MAX) * 100),
+                submittedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                importedFromExcel: true
+            }});
+        }
+
+        if (entries.length === 0) { alert('No valid Tapah-2 entries found. Make sure you are using the exported format.'); return; }
+        entries.sort((a, b) => a.dateStr.localeCompare(b.dateStr));
+        const confirmed = confirm(`Found ${entries.length} Tapah-2 entries (${entries[0].dateStr} to ${entries[entries.length-1].dateStr}).\n\nExisting entries will be overwritten. Continue?`);
+        if (!confirmed) return;
+
+        const modal = document.createElement('div');
+        modal.id = 'import-progress-modal';
+        modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+        modal.innerHTML = `<div style="background:white;border-radius:14px;max-width:340px;width:100%;padding:28px;text-align:center;">
+            <div style="font-size:36px;margin-bottom:10px;">📤</div>
+            <div style="font-weight:700;font-size:16px;color:#2c3e50;margin-bottom:8px;">Importing Tapah-2...</div>
+            <div id="import-progress-text" style="font-size:13px;color:#888;">0 / ${entries.length}</div>
+            <div style="margin-top:12px;background:#eee;border-radius:6px;height:8px;overflow:hidden;">
+                <div id="import-progress-bar" style="width:0%;height:100%;background:#e67e22;border-radius:6px;transition:width 0.3s;"></div>
+            </div></div>`;
+        document.body.appendChild(modal);
+
+        let imported = 0;
+        for (let i = 0; i < entries.length; i += 400) {
+            const batch = db.batch();
+            entries.slice(i, i + 400).forEach(e => {
+                batch.set(db.collection('users').doc(currentUser.uid).collection('tapah2').doc(e.dateStr), e.data);
+            });
+            await batch.commit();
+            imported += Math.min(400, entries.length - i);
+            const pt = document.getElementById('import-progress-text');
+            const pb = document.getElementById('import-progress-bar');
+            if (pt) pt.textContent = `${imported} / ${entries.length}`;
+            if (pb) pb.style.width = Math.round((imported / entries.length) * 100) + '%';
+        }
+
+        modal.innerHTML = `<div style="background:white;border-radius:14px;max-width:340px;width:100%;padding:28px;text-align:center;">
+            <div style="font-size:36px;margin-bottom:10px;">✅</div>
+            <div style="font-weight:700;font-size:16px;color:#27ae60;margin-bottom:8px;">Import Complete!</div>
+            <div style="font-size:13px;color:#888;margin-bottom:16px;">${imported} Tapah-2 entries imported.</div>
+            <button onclick="document.getElementById('import-progress-modal').remove();loadTapah2Report();"
+                style="padding:10px 24px;background:#e67e22;color:white;border:none;border-radius:8px;font-weight:700;font-size:14px;cursor:pointer;width:auto;">OK</button></div>`;
+    } catch (err) {
+        const m = document.getElementById('import-progress-modal');
+        if (m) m.remove();
+        alert('Could not import file. Error: ' + (err.code || err.message));
+    }
+};
+
+// ── Sadhna worksheet builder ───────────────────────────────────────
+function _buildSadhnaWs(snap) {
+    const bdr = (c = "BBBBBB") => ({ top:{style:"thin",color:{rgb:c}}, bottom:{style:"thin",color:{rgb:c}}, left:{style:"thin",color:{rgb:c}}, right:{style:"thin",color:{rgb:c}} });
+    const fill = (rgb) => ({ fgColor:{rgb}, patternType:"solid" });
+    const f = (opts) => ({ sz:9, ...opts });
+    const S = {
+        weekHdr:  { font:f({bold:true,sz:12,color:{rgb:"1A3650"}}), fill:fill("9DC3E6"), alignment:{horizontal:"center",vertical:"center"}, border:bdr("9DC3E6") },
+        colHdr:   { font:f({bold:true,color:{rgb:"1A3650"}}), fill:fill("BDD7EE"), alignment:{horizontal:"center",vertical:"center",wrapText:true}, border:bdr() },
+        dayName:  { font:f({bold:true}), alignment:{horizontal:"left",vertical:"center"}, border:bdr() },
+        dayNR:    { font:f({bold:true,color:{rgb:"9C0006"}}), fill:fill("FFE0E0"), alignment:{horizontal:"left",vertical:"center"}, border:bdr() },
+        normal:   { font:f({}), alignment:{horizontal:"center",vertical:"center"}, border:bdr() },
+        nrVal:    { font:f({bold:true,color:{rgb:"9C0006"}}), fill:fill("FFCCCC"), alignment:{horizontal:"center",vertical:"center"}, border:bdr() },
+        mksPos:   { font:f({bold:true,color:{rgb:"006100"}}), fill:fill("C6EFCE"), alignment:{horizontal:"center",vertical:"center"}, border:bdr() },
+        mksNeg:   { font:f({bold:true,color:{rgb:"9C0006"}}), fill:fill("FFC7CE"), alignment:{horizontal:"center",vertical:"center"}, border:bdr() },
+        mksZero:  { font:f({color:{rgb:"888888"}}), fill:fill("F5F5F5"), alignment:{horizontal:"center",vertical:"center"}, border:bdr() },
+        totalLbl: { font:f({bold:true,color:{rgb:"1A3650"}}), fill:fill("DEEAF1"), alignment:{horizontal:"left",vertical:"center"}, border:bdr() },
+        totalRow: { font:f({bold:true,color:{rgb:"1A3650"}}), fill:fill("DEEAF1"), alignment:{horizontal:"center",vertical:"center"}, border:bdr() },
+        overall:  { font:f({bold:true,sz:10,color:{rgb:"FFFFFF"}}), fill:fill("2E75B6"), alignment:{horizontal:"center",vertical:"center"}, border:bdr("2E75B6") },
+        pctGood:  { font:f({bold:true,color:{rgb:"006100"}}), fill:fill("C6EFCE"), alignment:{horizontal:"center",vertical:"center"}, border:bdr() },
+        pctOk:    { font:f({bold:true,color:{rgb:"7D6608"}}), fill:fill("FFEB9C"), alignment:{horizontal:"center",vertical:"center"}, border:bdr() },
+        pctBad:   { font:f({bold:true,color:{rgb:"9C0006"}}), fill:fill("FFC7CE"), alignment:{horizontal:"center",vertical:"center"}, border:bdr() },
+    };
+    const weeksData = {};
+    snap.forEach(doc => {
+        const wi = getWeekInfo(doc.id);
+        if (!weeksData[wi.sunStr]) weeksData[wi.sunStr] = { label: wi.label, sunStr: wi.sunStr, days: {} };
+        weeksData[wi.sunStr].days[doc.id] = doc.data();
+    });
+    const sortedWeeks = Object.keys(weeksData).sort((a,b) => b.localeCompare(a));
+    const dataArray = [], rowMeta = [];
+    const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    sortedWeeks.forEach((sunStr, weekIndex) => {
+        const week = weeksData[sunStr];
+        dataArray.push([`WEEK: ${week.label}`, ...Array(17).fill('')]); rowMeta.push({ type:'weekHdr' });
+        dataArray.push(['Day','1.To Bed','Mks','2. Wake Up','Mks','3. Japa','Mks','4. MP','Mks','5. DS','Mks','6. Pathan','Mks','7. Sarwan','Mks','8. Ntes Rev.','Mks','Day Wise']); rowMeta.push({ type:'colHdr' });
+        const wt = { sleepM:0,wakeupM:0,morningProgramM:0,chantingM:0,readingM:0,hearingM:0,notesM:0,daySleepM:0,readingMins:0,hearingMins:0,notesMins:0,total:0 };
+        const weekStart = new Date(week.sunStr + 'T00:00:00');
+        for (let i = 0; i < 7; i++) {
+            const d = new Date(weekStart); d.setDate(d.getDate() + i);
+            const dateStr = toLocalDateStr(d);
+            const hasEntry = !!week.days[dateStr];
+            const entry = week.days[dateStr] || getNRData(dateStr);
+            wt.sleepM += entry.scores?.sleep??0; wt.wakeupM += entry.scores?.wakeup??0;
+            wt.morningProgramM += entry.scores?.morningProgram??0; wt.chantingM += entry.scores?.chanting??0;
+            wt.readingM += entry.scores?.reading??0; wt.hearingM += entry.scores?.hearing??0;
+            wt.notesM += entry.scores?.notes??0; wt.daySleepM += entry.scores?.daySleep??0;
+            wt.readingMins += entry.readingMinutes==='NR'?0:(entry.readingMinutes||0);
+            wt.hearingMins += entry.hearingMinutes==='NR'?0:(entry.hearingMinutes||0);
+            wt.notesMins   += entry.notesMinutes==='NR'?0:(entry.notesMinutes||0);
+            wt.total += entry.totalScore??0;
+            dataArray.push([`${dayNames[i]} ${String(d.getDate()).padStart(2,'0')}`,entry.sleepTime||'NR',entry.scores?.sleep??0,entry.wakeupTime||'NR',entry.scores?.wakeup??0,entry.chantingTime||'NR',entry.scores?.chanting??0,entry.morningProgramTime||'NR',entry.scores?.morningProgram??0,entry.daySleepMinutes!=='NR'?entry.daySleepMinutes:'NR',entry.scores?.daySleep??0,entry.readingMinutes!=='NR'?entry.readingMinutes:'NR',entry.scores?.reading??0,entry.hearingMinutes!=='NR'?entry.hearingMinutes:'NR',entry.scores?.hearing??0,entry.notesMinutes!=='NR'?entry.notesMinutes:'NR',entry.scores?.notes??0,(entry.dayPercent??0)+'%']);
+            rowMeta.push({ type:'day', isNR:!hasEntry, scores:entry.scores, dayPercent:entry.dayPercent??0 });
+        }
+        let adjNotesM = wt.notesM; if (wt.notesMins >= 245) adjNotesM = 175;
+        const adjTotal = wt.total - wt.notesM + adjNotesM;
+        const weekPct = Math.round((adjTotal/1225)*100);
+        dataArray.push(['Total/1225','',wt.sleepM,'',wt.wakeupM,'',wt.chantingM,'',wt.morningProgramM,'',wt.daySleepM,wt.readingMins,wt.readingM,wt.hearingMins,wt.hearingM,wt.notesMins,adjNotesM,'']); rowMeta.push({ type:'total' });
+        dataArray.push(['Sadhna %','',`${Math.round((wt.sleepM/175)*100)}%`,'',`${Math.round((wt.wakeupM/175)*100)}%`,'',`${Math.round((wt.chantingM/175)*100)}%`,'',`${Math.round((wt.morningProgramM/175)*100)}%`,'',`${Math.round((wt.daySleepM/70)*100)}%`,'',`${Math.round((wt.readingM/175)*100)}%`,'',`${Math.round((wt.hearingM/175)*100)}%`,'',`${Math.round((adjNotesM/175)*100)}%`,'']); rowMeta.push({ type:'total' });
+        dataArray.push([`OVERALL  ${weekPct}%`, ...Array(17).fill('')]); rowMeta.push({ type:'overall' });
+        if (weekIndex < sortedWeeks.length - 1) { dataArray.push(Array(18).fill('')); rowMeta.push({ type:'blank' }); dataArray.push(Array(18).fill('')); rowMeta.push({ type:'blank' }); }
+    });
+    const ws = XLSX.utils.aoa_to_sheet(dataArray);
+    ws['!cols'] = [{wch:10},{wch:8},{wch:4},{wch:9},{wch:4},{wch:8},{wch:4},{wch:8},{wch:4},{wch:7},{wch:4},{wch:8},{wch:4},{wch:8},{wch:4},{wch:10},{wch:4},{wch:8}];
+    ws['!rows'] = rowMeta.map(m => ({ hpt: m.type==='weekHdr'?22:m.type==='colHdr'?28:16 }));
+    ws['!merges'] = [];
+    const NUM_COLS=18, MKS_COLS=new Set([2,4,6,8,10,12,14,16]), TIME_COLS=new Set([1,3,5,7,9,11,13,15]);
+    rowMeta.forEach((meta,r) => {
+        if (meta.type==='weekHdr'||meta.type==='overall') ws['!merges'].push({ s:{r,c:0}, e:{r,c:NUM_COLS-1} });
+        for (let c=0;c<NUM_COLS;c++) {
+            const ref=XLSX.utils.encode_cell({r,c}); if (!ws[ref]) ws[ref]={v:'',t:'s'}; const cell=ws[ref];
+            if (meta.type==='weekHdr') cell.s=S.weekHdr;
+            else if (meta.type==='colHdr') cell.s=S.colHdr;
+            else if (meta.type==='day') {
+                if (c===0) cell.s=meta.isNR?S.dayNR:S.dayName;
+                else if (c===17) { const p=meta.dayPercent; cell.s=p>=60?S.pctGood:p>=0?S.pctOk:S.pctBad; }
+                else if (MKS_COLS.has(c)) { const v=typeof cell.v==='number'?cell.v:0; cell.s=v>0?S.mksPos:v<0?S.mksNeg:S.mksZero; }
+                else if (TIME_COLS.has(c)) cell.s=cell.v==='NR'?S.nrVal:S.normal;
+            } else if (meta.type==='total') cell.s=c===0?S.totalLbl:S.totalRow;
+            else if (meta.type==='overall') cell.s=S.overall;
+        }
+    });
+    return ws;
+}
+
+// --- 3G. MASTER EXCEL DOWNLOAD (all 3 tabs) ---
+window.downloadMasterExcel = async () => {
+    if (!currentUser) { alert('Please login first.'); return; }
+    if (typeof XLSX === 'undefined') { alert('Excel library not loaded yet.'); return; }
+    try {
+        const [sadhnaSnap, tapahSnap, tapah2Snap] = await Promise.all([
+            db.collection('users').doc(currentUser.uid).collection('sadhana').get(),
+            db.collection('users').doc(currentUser.uid).collection('tapah').get(),
+            db.collection('users').doc(currentUser.uid).collection('tapah2').get(),
+        ]);
+        const wb = XLSX.utils.book_new();
+
+        if (!sadhnaSnap.empty) {
+            XLSX.utils.book_append_sheet(wb, _buildSadhnaWs(sadhnaSnap), 'Sadhna');
+        }
+        if (!tapahSnap.empty) {
+            const docs = []; tapahSnap.forEach(doc => docs.push({ id:doc.id, ...doc.data() }));
+            docs.sort((a,b) => a.id.localeCompare(b.id));
+            XLSX.utils.book_append_sheet(wb, _buildTapahWs(docs), 'Tapah');
+        }
+        if (!tapah2Snap.empty) {
+            const docs = []; tapah2Snap.forEach(doc => docs.push({ id:doc.id, ...doc.data() }));
+            docs.sort((a,b) => a.id.localeCompare(b.id));
+            XLSX.utils.book_append_sheet(wb, _buildTapah2Ws(docs), 'Tapah-2');
+        }
+
+        if (wb.SheetNames.length === 0) { alert('No data found across any tab.'); return; }
+        XLSX.writeFile(wb, `${userProfile?.name || 'My'}_Master_Sadhana.xlsx`);
+    } catch (err) {
+        alert('Could not download master Excel. Error: ' + (err.code || err.message));
+    }
+};
+
 // --- 4. UI NAVIGATION ---
 function showSection(section) {
     ['auth', 'profile', 'dashboard'].forEach(s => {
@@ -433,7 +941,8 @@ window.switchMainTab = (tab) => {
     // Hide all main tab contents
     document.querySelectorAll('.main-tab-content').forEach(el => { el.style.display = 'none'; });
     // Show selected
-    const target = document.getElementById(tab === 'sadhna' ? 'sadhna-main-tab' : tab === 'tapah' ? 'tapah-main-tab' : 'home-tab');
+    const tabIds = { sadhna: 'sadhna-main-tab', tapah: 'tapah-main-tab', tapah2: 'tapah2-main-tab' };
+    const target = document.getElementById(tabIds[tab] || 'home-tab');
     if (target) target.style.display = 'block';
 
     // Update bottom nav active state
@@ -445,11 +954,12 @@ window.switchMainTab = (tab) => {
     // Load data for the tab
     if (tab === 'home' && currentUser) loadHomeScreen();
     if (tab === 'tapah') resetTapahForm();
+    if (tab === 'tapah2') resetTapah2Form();
 };
 
 // --- SUB-TAB SWITCHER (within Sadhna / Tapah) ---
 window.switchSubTab = (parent, sub) => {
-    const activeColor = parent === 'sadhna' ? '#2c3e50' : '#764ba2';
+    const activeColor = parent === 'sadhna' ? '#2c3e50' : parent === 'tapah2' ? '#e67e22' : '#764ba2';
     // Hide all sub-tab contents for this parent
     document.querySelectorAll(`.${parent}-subtab-content`).forEach(el => { el.style.display = 'none'; });
     // Show selected
@@ -467,15 +977,19 @@ window.switchSubTab = (parent, sub) => {
         activeBtn.style.color = 'white';
     }
 
-    if (parent === 'tapah' && sub === 'entry') resetTapahForm();
+    if (parent === 'tapah'  && sub === 'entry') resetTapahForm();
+    if (parent === 'tapah2' && sub === 'entry') resetTapah2Form();
 
     // Load data
     if (parent === 'sadhna' && sub === 'reports' && currentUser) {
         _reportsLoading = false;
         loadReports(currentUser.uid, 'weekly-reports-container');
     }
-    if (parent === 'sadhna' && sub === 'progress' && currentUser) generateCharts();
-    if (parent === 'tapah' && sub === 'reports' && currentUser) loadTapahReport();
+    if (parent === 'sadhna'  && sub === 'progress' && currentUser) generateCharts();
+    if (parent === 'tapah'   && sub === 'reports'  && currentUser) loadTapahReport();
+    if (parent === 'tapah'   && sub === 'progress' && currentUser) loadTapahProgress();
+    if (parent === 'tapah2'  && sub === 'reports'  && currentUser) loadTapah2Report();
+    if (parent === 'tapah2'  && sub === 'progress' && currentUser) loadTapah2Progress();
 };
 
 // Legacy switchTab — keep for backward compat (edit buttons etc.)
@@ -521,7 +1035,7 @@ async function loadHomeScreen(weekOffset) {
         const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
         const dayDots = [];
         const actTotals = { Sleep: 0, 'Wake-up': 0, 'Morning Prog.': 0, Chanting: 0, Reading: 0, Hearing: 0, 'Notes Rev.': 0, 'Day Sleep': 0 };
-        const NR_SC = { sleep: -5, wakeup: -5, morningProgram: -5, chanting: -5, reading: -5, hearing: -5, notes: -5, daySleep: 0 };
+        const NR_SC = { sleep: -5, wakeup: -5, morningProgram: -5, chanting: -5, reading: -5, hearing: -5, notes: -5, daySleep: -5 };
 
         for (let i = 0; i < 7; i++) {
             const d = new Date(thisWeekSun);
@@ -531,7 +1045,7 @@ async function loadHomeScreen(weekOffset) {
             const isToday = ds === todayStr;
             const filled = !!weekData[ds];
 
-            if (!isFuture) {
+            if (!isFuture && ds >= APP_START_DATE) {
                 elapsedDays++;
                 if (filled) {
                     daysFilled++;
@@ -598,12 +1112,12 @@ async function loadHomeScreen(weekOffset) {
             return `<div style="text-align:center;"><div style="width:32px;height:32px;border-radius:50%;background:#e74c3c;margin:0 auto;display:flex;align-items:center;justify-content:center;color:white;font-size:14px;">✗</div><div style="font-size:10px;color:#555;margin-top:3px;">${d.name}</div></div>`;
         }).join('');
 
-        // Activity bars HTML — use full week max (same as Reports Sadhna % row)
-        const actMaxMap = { 'Day Sleep': 70 };  // 7 × 10
-        const defaultActMax = 175;               // 7 × 25
+        // Activity bars HTML — scale max by elapsed days (fair denominator)
+        const actDayMax = { 'Day Sleep': 10 };  // 10 pts/day
+        const defaultActDayMax = 25;             // 25 pts/day
         const actEmojis = { Sleep: '🛏️', 'Wake-up': '⏰', 'Morning Prog.': '🙏', Chanting: '📿', Reading: '📖', Hearing: '🎧', 'Notes Rev.': '📝', 'Day Sleep': '😴' };
         const actBarsHtml = Object.entries(actTotals).map(([name, val]) => {
-            const thisMax = actMaxMap[name] || defaultActMax;
+            const thisMax = (actDayMax[name] || defaultActDayMax) * elapsedDays;
             const pct = thisMax > 0 ? Math.round((val / thisMax) * 100) : 0;
             const barWidth = Math.max(0, pct); // bar can't be negative width
             const pctColor = pct < 0 ? '#e74c3c' : '#555';
@@ -732,7 +1246,7 @@ auth.onAuthStateChanged(async (user) => {
 
 // --- 6. SCORING ENGINE ---
 function computeScores(slp, wak, mpTime, mpNotDone, chn, rMin, hMin, nMin, dsMin) {
-    const sc = { sleep: -5, wakeup: -5, morningProgram: -5, chanting: -5, reading: -5, hearing: -5, notes: -5, daySleep: 0 };
+    const sc = { sleep: -5, wakeup: -5, morningProgram: -5, chanting: -5, reading: -5, hearing: -5, notes: -5, daySleep: -5 };
 
     // Sleep Score
     const slpM = t2m(slp, true);
@@ -1222,8 +1736,15 @@ async function loadReports(userId, containerId) {
 
     // 4-week comparison is rendered AFTER weekly reports (called below after container.innerHTML)
 
-    // Show only the last 4 weeks
-    const sortedWeeks = Array.from(last4Suns).sort((a, b) => b.localeCompare(a));
+    // Show only the last 4 weeks that have at least one day >= APP_START_DATE
+    const sortedWeeks = Array.from(last4Suns)
+        .filter(sunStr => {
+            // Week's Saturday = sunStr + 6 days
+            const sat = new Date(sunStr + 'T00:00:00');
+            sat.setDate(sat.getDate() + 6);
+            return toLocalDateStr(sat) >= APP_START_DATE;
+        })
+        .sort((a, b) => b.localeCompare(a));
 
     let html = '';
     sortedWeeks.forEach(sunStr => {
@@ -1243,6 +1764,7 @@ async function loadReports(userId, containerId) {
             const dateStr = toLocalDateStr(currentDate);
             const isFuture = currentDate > todayStart;
             if (isFuture) continue; // future days don't count toward totals
+            if (dateStr < APP_START_DATE) continue; // before app launch — not NR
 
             const entry = week.days[dateStr] || getNRData(dateStr);
             const isNR = !week.days[dateStr];
@@ -1268,8 +1790,9 @@ async function loadReports(userId, containerId) {
             const dateStr = toLocalDateStr(currentDate);
             const isFuture = currentDate > todayStart;
 
-            // Future dates — skip entirely, no row shown
+            // Future dates and pre-app-launch dates — skip entirely, no row shown
             if (isFuture) continue;
+            if (dateStr < APP_START_DATE) continue;
 
             const entry = week.days[dateStr] || getNRData(dateStr);
             const isNR = !week.days[dateStr];
@@ -1314,8 +1837,8 @@ async function loadReports(userId, containerId) {
 
             tableRows += `
                 <tr style="${rowBg}border-bottom:1px solid #f0f0f0;">
-                    <td style="text-align:center;padding:7px 5px;">${pfBadge}</td>
-                    <td style="white-space:nowrap;padding:7px 8px;font-size:13px;">${dateLabel}</td>
+                    <td style="text-align:center;padding:7px 5px;${isNR?'background:#fff8f8;':'background:white;'}">${pfBadge}</td>
+                    <td style="white-space:nowrap;padding:7px 8px;font-size:13px;border-right:2px solid #e0e0e0;${isNR?'background:#fff8f8;':'background:white;'}">${dateLabel}</td>
                     <td style="padding:7px 6px;font-size:12px;white-space:nowrap;color:${isNR?'#e74c3c':'#333'};">${tv(entry.sleepTime)}</td>
                     ${renderScoreCell(entry.scores?.sleep, isNR)}
                     <td style="padding:7px 6px;font-size:12px;white-space:nowrap;color:${isNR?'#e74c3c':'#333'};">${tv(entry.wakeupTime)}</td>
@@ -1370,15 +1893,15 @@ async function loadReports(userId, containerId) {
             <div class="week-card ${weekClass}">
                 <div class="week-header" onclick="this.nextElementSibling.classList.toggle('expanded'); this.querySelector('.toggle-icon').textContent = this.nextElementSibling.classList.contains('expanded') ? '▼' : '▶';">
                     <span>📅 ${week.label.split('_')[0]} ${week.label.split('_')[1] || ''}</span>
-                    <span style="color:${fairPercent>=50?'#27ae60':'#e74c3c'};font-weight:700;">${adjustedTotal} / ${fairMax} (${fairPercent}%) <span class="toggle-icon">▶</span></span>
+                    <span style="color:${fairPercent>=50?'#27ae60':'#e74c3c'};font-weight:700;text-align:right;">${adjustedTotal}/${fairMax} (${fairPercent}%) <span class="toggle-icon">▶</span></span>
                 </div>
                 <div class="week-content">
                     <div style="overflow-x:auto;">
                     <table class="daily-table" style="font-size:13px;">
                         <thead>
                             <tr style="background:#2c3e50;color:white;font-size:12px;">
-                                <th style="padding:8px 5px;text-align:center;min-width:44px;">P/F</th>
-                                <th style="padding:8px 6px;white-space:nowrap;min-width:52px;">Date</th>
+                                <th style="padding:8px 5px;text-align:center;width:44px;min-width:44px;">P/F</th>
+                                <th style="padding:8px 6px;white-space:nowrap;min-width:52px;border-right:2px solid #1a252f;">Date</th>
                                 <th style="padding:8px 6px;white-space:nowrap;">Bed</th>
                                 <th style="padding:8px 4px;text-align:center;min-width:32px;">M</th>
                                 <th style="padding:8px 6px;white-space:nowrap;">Wake</th>
@@ -1402,35 +1925,35 @@ async function loadReports(userId, containerId) {
                         <tbody>
                             ${tableRows}
                             <tr style="background:#f0f4ff;font-weight:bold;font-size:12px;">
-                                <td colspan="2" style="padding:7px 8px;color:#2c3e50;">Total</td>
+                                <td colspan="2" style="padding:7px 8px;color:#2c3e50;position:sticky;left:0;z-index:2;background:#f0f4ff;">Total</td>
                                 <td style="padding:7px 4px;text-align:center;color:#888;">—</td>
-                                ${totCell(weekTotals.sleepMarks, 175)}
+                                ${totCell(weekTotals.sleepMarks, elapsedDays * 25)}
                                 <td style="padding:7px 4px;text-align:center;color:#888;">—</td>
-                                ${totCell(weekTotals.wakeupMarks, 175)}
+                                ${totCell(weekTotals.wakeupMarks, elapsedDays * 25)}
                                 <td style="padding:7px 4px;text-align:center;color:#888;">—</td>
-                                ${totCell(weekTotals.chantingMarks, 175)}
+                                ${totCell(weekTotals.chantingMarks, elapsedDays * 25)}
                                 <td style="padding:7px 4px;text-align:center;color:#888;">—</td>
-                                ${totCell(weekTotals.morningMarks, 175)}
+                                ${totCell(weekTotals.morningMarks, elapsedDays * 25)}
                                 <td style="padding:7px 4px;text-align:center;color:#888;">—</td>
-                                ${totCell(weekTotals.daySleepMarks, 70)}
+                                ${totCell(weekTotals.daySleepMarks, elapsedDays * 10)}
                                 <td style="padding:7px 4px;text-align:center;font-size:11px;color:#555;">${weekTotals.readingMins}m</td>
-                                ${totCell(weekTotals.readingMarks, 175)}
+                                ${totCell(weekTotals.readingMarks, elapsedDays * 25)}
                                 <td style="padding:7px 4px;text-align:center;font-size:11px;color:#555;">${weekTotals.hearingMins}m</td>
-                                ${totCell(weekTotals.hearingMarks, 175)}
+                                ${totCell(weekTotals.hearingMarks, elapsedDays * 25)}
                                 <td style="padding:7px 4px;text-align:center;font-size:11px;color:#555;">${weekTotals.notesMins}m</td>
-                                ${totCell(adjustedNotesMarks, 175)}
+                                ${totCell(adjustedNotesMarks, elapsedDays * 25)}
                                 <td colspan="2" style="padding:7px 4px;text-align:center;color:#888;">—</td>
                             </tr>
                             <tr style="background:#e8f0fe;font-weight:bold;font-size:12px;">
-                                <td colspan="2" style="padding:6px 8px;color:#2c3e50;">Sadhna %</td>
-                                ${pctCell(weekTotals.sleepMarks, 175)}
-                                ${pctCell(weekTotals.wakeupMarks, 175)}
-                                ${pctCell(weekTotals.chantingMarks, 175)}
-                                ${pctCell(weekTotals.morningMarks, 175)}
-                                ${pctCell(weekTotals.daySleepMarks, 70)}
-                                ${pctCell(weekTotals.readingMarks, 175)}
-                                ${pctCell(weekTotals.hearingMarks, 175)}
-                                ${pctCell(adjustedNotesMarks, 175)}
+                                <td colspan="2" style="padding:6px 8px;color:#2c3e50;position:sticky;left:0;z-index:2;background:#e8f0fe;">Sadhna %</td>
+                                ${pctCell(weekTotals.sleepMarks,    elapsedDays * 25)}
+                                ${pctCell(weekTotals.wakeupMarks,   elapsedDays * 25)}
+                                ${pctCell(weekTotals.chantingMarks, elapsedDays * 25)}
+                                ${pctCell(weekTotals.morningMarks,  elapsedDays * 25)}
+                                ${pctCell(weekTotals.daySleepMarks, elapsedDays * 10)}
+                                ${pctCell(weekTotals.readingMarks,  elapsedDays * 25)}
+                                ${pctCell(weekTotals.hearingMarks,  elapsedDays * 25)}
+                                ${pctCell(adjustedNotesMarks,       elapsedDays * 25)}
                                 <td colspan="2" style="padding:6px 4px;text-align:center;color:#888;">—</td>
                             </tr>
                         </tbody>
@@ -1499,6 +2022,7 @@ function generate4WeekComparison(weeksNewestFirst, weeksData) {
             const dateStr = toLocalDateStr(currentDate);
             const isFuture = new Date(dateStr + 'T00:00:00') > today;
             if (isFuture) continue; // skip future days entirely for fair denominator
+            if (dateStr < APP_START_DATE) continue; // before app launch — not NR
             const entry = (week && week.days[dateStr]) ? week.days[dateStr] : getNRData(dateStr);
             const isFilled = !!(week && week.days[dateStr]);
             weekTotal += entry.totalScore ?? 0;
@@ -1539,8 +2063,14 @@ function generate4WeekComparison(weeksNewestFirst, weeksData) {
         return { ...ws, trendIcon, trendColor };
     });
 
-    // Display newest week first
-    const displayStats = [...weekStatsWithTrend].reverse();
+    // Display newest week first, hide weeks entirely before app start
+    const displayStats = [...weekStatsWithTrend]
+        .reverse()
+        .filter(ws => {
+            const sat = new Date(ws.sunStr + 'T00:00:00');
+            sat.setDate(sat.getDate() + 6);
+            return toLocalDateStr(sat) >= APP_START_DATE;
+        });
 
     let tableHTML = `
         <table class="comparison-table">
@@ -1622,14 +2152,16 @@ async function generateDailyCharts() {
     for (let i = 27; i >= 0; i--) {
         const d = new Date(today);
         d.setDate(today.getDate() - i);
-        dates.push(toLocalDateStr(d));  // IST-safe local date
+        const ds = toLocalDateStr(d);
+        if (ds >= APP_START_DATE) dates.push(ds);  // Only show from app start date
     }
 
+    if (dates.length === 0) return;
     // Use date range query — works for any number of dates
     const snapshot = await db.collection('users').doc(currentUser.uid)
         .collection('sadhana')
         .where(firebase.firestore.FieldPath.documentId(), '>=', dates[0])
-        .where(firebase.firestore.FieldPath.documentId(), '<=', dates[27])
+        .where(firebase.firestore.FieldPath.documentId(), '<=', dates[dates.length - 1])
         .get();
 
     const data = {};
@@ -1640,12 +2172,13 @@ async function generateDailyCharts() {
     const scores = dates.map(d => {
         if (data[d] !== undefined) return data[d].totalScore ?? null;
         if (d === todayStr) return null;
+        if (d < APP_START_DATE) return null; // before app launch — no penalty
         return -40;
     });
 
     // Activity totals: NR past days contribute penalty scores (same as getNRData)
     const NR_SCORES = { sleep: -5, wakeup: -5, morningProgram: -5, chanting: -5, reading: -5, hearing: -5, notes: -5, daySleep: 0 };
-    const getS = (d, key) => data[d] ? (data[d]?.scores?.[key] ?? 0) : (d === todayStr ? 0 : NR_SCORES[key]);
+    const getS = (d, key) => data[d] ? (data[d]?.scores?.[key] ?? 0) : (d === todayStr || d < APP_START_DATE ? 0 : NR_SCORES[key]);
     _currentActivityTotals = {
         Sleep:           dates.reduce((s, d) => s + getS(d, 'sleep'), 0),
         'Wake-up':       dates.reduce((s, d) => s + getS(d, 'wakeup'), 0),
@@ -1657,15 +2190,15 @@ async function generateDailyCharts() {
         'Day Sleep':     dates.reduce((s, d) => s + getS(d, 'daySleep'), 0),
     };
 
-    // Ring: include NR past days at -40, exclude today if not yet filled
-    const datesForRing = dates.filter(d => d !== todayStr || data[d]);
+    // Ring: include NR past days at -40, exclude today if not yet filled, exclude pre-app-start
+    const datesForRing = dates.filter(d => (d !== todayStr || data[d]) && d >= APP_START_DATE);
     const totalEarned = datesForRing.reduce((s, d) => s + (data[d] ? (data[d].totalScore ?? 0) : -40), 0);
     const maxPossible = datesForRing.length * 175;
     const fairPercent = maxPossible > 0 ? Math.round((totalEarned / maxPossible) * 100) : 0;
 
     const ringContainer = document.getElementById('score-ring-container');
     if (ringContainer) ringContainer.style.display = datesForRing.length > 0 ? 'block' : 'none';
-    if (datesForRing.length > 0) renderScoreRing(fairPercent, `${dates[0].slice(5).replace('-','/')} – ${dates[27].slice(5).replace('-','/')}`, datesForRing.length, totalEarned);
+    if (datesForRing.length > 0) renderScoreRing(fairPercent, `${dates[0].slice(5).replace('-','/')} – ${dates[dates.length-1].slice(5).replace('-','/')}`, datesForRing.length, totalEarned);
 
     renderScoreLineChart(labels, scores);
     renderActivityBarChart(_currentActivityTotals);
@@ -1707,9 +2240,10 @@ async function generateWeeklyCharts() {
         const wData = {};
         snapshot.forEach(doc => { wData[doc.id] = doc.data(); });
 
-        // Count all past days in week (submitted or NR), skip future
+        // Count all past days in week (submitted or NR), skip future and pre-app-start
         weekDates.forEach(dateStr => {
             if (dateStr > todayStr2) return; // future day — skip
+            if (dateStr < APP_START_DATE) return; // before app launch — skip
             if (wData[dateStr]) {
                 weekTotal += wData[dateStr].totalScore ?? 0;
             } else {
@@ -1727,6 +2261,7 @@ async function generateWeeklyCharts() {
             const NR_SC = { sleep:-5, wakeup:-5, morningProgram:-5, chanting:-5, reading:-5, hearing:-5, notes:-5, daySleep:0 };
             weekDates.forEach(d => {
                 if (d > todayStr2) return;
+                if (d < APP_START_DATE) return;
                 const src = wData[d] ? wData[d].scores : NR_SC;
                 _currentActivityTotals['Sleep']          += src?.sleep ?? 0;
                 _currentActivityTotals['Wake-up']        += src?.wakeup ?? 0;
@@ -1860,7 +2395,7 @@ function renderScoreLineChart(labels, scores) {
                 pointHoverBackgroundColor: '#5b9bd5',
                 tension: 0.35,
                 fill: true,
-                spanGaps: false,
+                spanGaps: true,
             }]
         },
         options: {
@@ -2018,6 +2553,7 @@ function getPratikulScore(val) { return val === 'yes' ? -5 : val === 'partial' ?
 
 let tapahEditingDate = null;
 let _tapahAnswers = {};
+let _tapahChart = null;
 
 // Flat list of all questions with section tag
 const ALL_TAPAH_QUESTIONS = [
@@ -2030,44 +2566,109 @@ let _flashCardIndex = 0; // current card index (0–9)
 function resetTapahForm() {
     _tapahAnswers = {};
     _flashCardIndex = 0;
-    _tapahAnswering = false; // clear any pending debounce on reset
+    _tapahAnswering = false;
+    tapahEditingDate = null;
     setupTapahDateSelect();
-    const sel = document.getElementById('tapah-date');
-    if (sel) sel.disabled = false;
     const banner = document.getElementById('tapah-edit-banner');
     if (banner) banner.style.display = 'none';
-    tapahEditingDate = null;
     const submitBtn = document.getElementById('tapah-submit-btn');
     if (submitBtn) submitBtn.style.display = 'none';
     const doneScreen = document.getElementById('tapah-done-screen');
     if (doneScreen) doneScreen.style.display = 'none';
     const card = document.getElementById('tapah-card');
-    if (card) {
-        card.style.display = 'block';
-        card.style.opacity = '1';
-        card.style.transform = 'none';
-        card.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
-    }
+    if (card) { card.style.display = 'block'; card.style.opacity = '1'; card.style.transform = 'none'; card.style.transition = 'opacity 0.2s ease, transform 0.2s ease'; }
     renderFlashCard(0);
     updateTapahTotals();
 }
 
-window.cancelTapahEdit = () => resetTapahForm();
+window.cancelTapahEdit = () => {
+    resetTapahForm();
+    // Badge back to today
+    const todayStr = toLocalDateStr(new Date());
+    const badge = document.getElementById('tapah-date-status');
+    const hint  = document.getElementById('tapah-date-hint');
+    if (badge) { badge.textContent = '📆 Today'; badge.style.background = '#e8f0fe'; badge.style.color = '#3498db'; }
+    if (hint)  hint.textContent = 'Filling today\'s entry';
+};
 
 function setupTapahDateSelect() {
     const s = document.getElementById('tapah-date');
     if (!s) return;
-    s.innerHTML = '';
-    for (let i = 0; i < 5; i++) {
-        const d = new Date();
-        d.setDate(d.getDate() - i);
-        const iso = toLocalDateStr(d);
-        const opt = document.createElement('option');
-        opt.value = iso;
-        opt.textContent = i === 0 ? `Today (${iso})` : i === 1 ? `Yesterday (${iso})` : iso;
-        s.appendChild(opt);
+    const todayStr = toLocalDateStr(new Date());
+    s.min = APP_START_DATE;
+    s.max = todayStr;
+    s.value = todayStr;
+    s.disabled = false;
+    updateTapahDateStatus(todayStr);
+}
+
+function updateTapahDateStatus(dateStr) {
+    const badge  = document.getElementById('tapah-date-status');
+    const hint   = document.getElementById('tapah-date-hint');
+    if (!badge) return;
+    const todayStr = toLocalDateStr(new Date());
+    if (!dateStr) { badge.textContent = '—'; badge.style.background = '#f0f0f0'; badge.style.color = '#888'; return; }
+    if (dateStr === todayStr) {
+        badge.textContent = '📆 Today';
+        badge.style.background = '#e8f0fe'; badge.style.color = '#3498db';
+        if (hint) hint.textContent = 'Filling today\'s entry';
+    } else {
+        badge.textContent = '⏳ Checking…';
+        badge.style.background = '#f0f0f0'; badge.style.color = '#888';
     }
 }
+
+window.onTapahDateChange = async (dateStr) => {
+    if (!dateStr || !currentUser) return;
+    const badge = document.getElementById('tapah-date-status');
+    const hint  = document.getElementById('tapah-date-hint');
+    const todayStr = toLocalDateStr(new Date());
+
+    // Reset form state (keep date)
+    _tapahAnswers = {};
+    _flashCardIndex = 0;
+    _tapahAnswering = false;
+    tapahEditingDate = null;
+    const banner = document.getElementById('tapah-edit-banner');
+    if (banner) banner.style.display = 'none';
+    const card = document.getElementById('tapah-card');
+    if (card) { card.style.display = 'block'; card.style.opacity = '1'; card.style.transform = 'none'; }
+    const doneScreen = document.getElementById('tapah-done-screen');
+    if (doneScreen) doneScreen.style.display = 'none';
+    const submitBtn = document.getElementById('tapah-submit-btn');
+    if (submitBtn) submitBtn.style.display = 'none';
+
+    if (badge) { badge.textContent = '⏳'; badge.style.background = '#f0f0f0'; badge.style.color = '#888'; }
+
+    try {
+        const snap = await db.collection('users').doc(currentUser.uid).collection('tapah').doc(dateStr).get();
+        if (snap.exists) {
+            const d = snap.data();
+            restoreTapahButtons(d.anukul || {}, d.pratikul || {});
+            tapahEditingDate = dateStr;
+            const bannerText = document.getElementById('tapah-edit-banner-text');
+            if (banner) banner.style.display = 'flex';
+            if (bannerText) bannerText.textContent = `Editing Tapah: ${dateStr}`;
+            if (badge) { badge.textContent = '✅ Filled'; badge.style.background = '#e8f8f0'; badge.style.color = '#27ae60'; }
+            if (hint) hint.textContent = 'Entry exists — editing it now';
+        } else {
+            if (badge) {
+                if (dateStr === todayStr) {
+                    badge.textContent = '📆 Today'; badge.style.background = '#e8f0fe'; badge.style.color = '#3498db';
+                    if (hint) hint.textContent = 'New entry for today';
+                } else {
+                    badge.textContent = '⚠️ NR'; badge.style.background = '#fff3cd'; badge.style.color = '#856404';
+                    if (hint) hint.textContent = 'No entry yet — filling now';
+                }
+            }
+        }
+    } catch (err) {
+        if (badge) { badge.textContent = '❌ Error'; badge.style.background = '#fde8e8'; badge.style.color = '#e74c3c'; }
+        if (hint) hint.textContent = err.code || err.message;
+    }
+    renderFlashCard(0);
+    updateTapahTotals();
+};
 
 function renderFlashCard(idx) {
     const total = ALL_TAPAH_QUESTIONS.length;
@@ -2254,43 +2855,13 @@ function restoreTapahButtons(anukulAnswers, pratikulAnswers) {
     renderFlashCard(_flashCardIndex);
 }
 
-// Edit a past Tapah entry
+// Edit a past Tapah entry (called from report edit buttons)
 window.editTapahEntry = async (dateStr) => {
-    document.querySelectorAll('.tab-content').forEach(el => { el.classList.remove('active'); el.classList.add('hidden'); });
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-    const tab = document.getElementById('tapah-tab');
-    if (tab) { tab.classList.remove('hidden'); tab.classList.add('active'); }
-    const btn = document.querySelector(`button[onclick*="switchTab('tapah')"]`);
-    if (btn) btn.classList.add('active');
-
-    resetTapahForm();
-
-    const snap = await db.collection('users').doc(currentUser.uid).collection('tapah').doc(dateStr).get();
-    if (snap.exists) {
-        const d = snap.data();
-        restoreTapahButtons(d.anukul || {}, d.pratikul || {});
-    }
-
+    switchMainTab('tapah');
+    switchSubTab('tapah', 'entry');
     const sel = document.getElementById('tapah-date');
-    let found = false;
-    if (sel) {
-        for (const opt of sel.options) { if (opt.value === dateStr) { opt.selected = true; found = true; break; } }
-        if (!found) {
-            const opt = document.createElement('option');
-            opt.value = dateStr; opt.textContent = dateStr;
-            sel.insertBefore(opt, sel.firstChild);
-            sel.value = dateStr;
-        }
-        sel.disabled = true;
-    }
-
-    tapahEditingDate = dateStr;
-    const banner = document.getElementById('tapah-edit-banner');
-    const bannerText = document.getElementById('tapah-edit-banner-text');
-    if (banner) banner.style.display = 'flex';
-    if (bannerText) bannerText.textContent = `Editing Tapah: ${dateStr}`;
-    const editSubmitBtn = document.getElementById('tapah-submit-btn');
-    if (editSubmitBtn) { editSubmitBtn.style.display = 'none'; editSubmitBtn.textContent = '💾 Update Tapah'; }
+    if (sel) { sel.value = dateStr; sel.disabled = false; }
+    await onTapahDateChange(dateStr);
     window.scrollTo({ top: 0, behavior: 'smooth' });
 };
 
@@ -2342,6 +2913,727 @@ window.submitTapahFromFlash = async () => {
 window.selectTapahOption = () => {};
 
 // ── END TAPAH MODULE ──
+
+// ══════════════════════════════════════════════
+// --- TAPAH-2 MODULE ---
+// ══════════════════════════════════════════════
+
+// Flat list of all questions — each sub-item is its own card
+const TAPAH2_QUESTIONS = [
+    // Focus on Chanting – 5 marks (5 × 1)
+    { id: 'ch_q1', cat: 'chanting', catLabel: 'Focus on Chanting',           catEmoji: '🧘‍♂️', label: 'Pray with Heart',                                         max: 1 },
+    { id: 'ch_q2', cat: 'chanting', catLabel: 'Focus on Chanting',           catEmoji: '🧘‍♂️', label: 'No Use anything except Chanting',                         max: 1 },
+    { id: 'ch_q3', cat: 'chanting', catLabel: 'Focus on Chanting',           catEmoji: '🧘‍♂️', label: 'Clear Pronunciation / Hearing',                           max: 1 },
+    { id: 'ch_q4', cat: 'chanting', catLabel: 'Focus on Chanting',           catEmoji: '🧘‍♂️', label: 'Minimum 10 Rounds in one position',                       max: 1 },
+    { id: 'ch_q5', cat: 'chanting', catLabel: 'Focus on Chanting',           catEmoji: '🧘‍♂️', label: 'Complete with one slot',                                  max: 1 },
+    // No Prajalpa – 5 marks (5 × 1)
+    { id: 'pr_q1', cat: 'prajalpa', catLabel: 'No Prajalpa',                 catEmoji: '🧘',   label: 'No superfluous talk',                                      max: 1 },
+    { id: 'pr_q2', cat: 'prajalpa', catLabel: 'No Prajalpa',                 catEmoji: '🧘',   label: 'Social media control (1 Hr/Day)',                          max: 1 },
+    { id: 'pr_q3', cat: 'prajalpa', catLabel: 'No Prajalpa',                 catEmoji: '🧘',   label: 'Avoid unnecessary hearing',                                max: 1 },
+    { id: 'pr_q4', cat: 'prajalpa', catLabel: 'No Prajalpa',                 catEmoji: '🧘',   label: 'Sattam Kirtanam (internal remembrance)',                   max: 1 },
+    { id: 'pr_q5', cat: 'prajalpa', catLabel: 'No Prajalpa',                 catEmoji: '🧘',   label: 'Hourly Prayer',                                            max: 1 },
+    // Vaishnav Aparadha – 4 marks (4 × 1)
+    { id: 'va_q1', cat: 'vaishnav', catLabel: 'Vaishnav Aparadha',        catEmoji: '🙏',   label: 'No Vaishnav Fault Discussion (Authority Except)',          max: 1 },
+    { id: 'va_q2', cat: 'vaishnav', catLabel: 'Vaishnav Aparadha',        catEmoji: '🙏',   label: 'No debate (accept & learn)',                               max: 1 },
+    { id: 'va_q3', cat: 'vaishnav', catLabel: 'Vaishnav Aparadha',        catEmoji: '🙏',   label: 'Mentally offer obeisances',                                max: 1 },
+    { id: 'va_q4', cat: 'vaishnav', catLabel: 'Vaishnav Aparadha',        catEmoji: '🙏',   label: 'Non-Critical Vision (Jeev Ninda)',                         max: 1 },
+    // Interaction Discipline (Maryada) – 5 marks (5 × 1)
+    { id: 'ma_q1', cat: 'maryada',  catLabel: 'Interaction Discipline',      catEmoji: '🚫',   label: 'No unnecessary talk',                                      max: 1 },
+    { id: 'ma_q2', cat: 'maryada',  catLabel: 'Interaction Discipline',      catEmoji: '🚫',   label: 'No joking / casual talk',                                  max: 1 },
+    { id: 'ma_q3', cat: 'maryada',  catLabel: 'Interaction Discipline',      catEmoji: '🚫',   label: 'Physical Boundaries',                                      max: 1 },
+    { id: 'ma_q4', cat: 'maryada',  catLabel: 'Interaction Discipline',      catEmoji: '🚫',   label: 'Focused Awareness',                                        max: 1 },
+    { id: 'ma_q5', cat: 'maryada',  catLabel: 'Interaction Discipline',      catEmoji: '🚫',   label: 'No Private meeting',                                       max: 1 },
+    // Harmonium / Skill – 15 marks (3 × 5)
+    { id: 'sk_q1', cat: 'skill',    catLabel: 'Harmonium / Skill',           catEmoji: '🎹',   label: 'Harmonium practice 30 min',                                max: 5 },
+    { id: 'sk_q2', cat: 'skill',    catLabel: 'Harmonium / Skill',           catEmoji: '🎹',   label: 'DRLR + speaking + Words',                                  max: 5 },
+    { id: 'sk_q3', cat: 'skill',    catLabel: 'Harmonium / Skill',           catEmoji: '🎹',   label: 'Weekly weakness notes',                                    max: 5 },
+    // Tolerance – 6 marks (6 × 1)
+    { id: 'to_q1', cat: 'tolerance',catLabel: 'Tolerance',                   catEmoji: '🌿',   label: 'No Reaction (Control Response)',                            max: 1 },
+    { id: 'to_q2', cat: 'tolerance',catLabel: 'Tolerance',                   catEmoji: '🌿',   label: 'Situation Acceptance',                                     max: 1 },
+    { id: 'to_q3', cat: 'tolerance',catLabel: 'Tolerance',                   catEmoji: '🌿',   label: 'Respect Even When Hurt',                                   max: 1 },
+    { id: 'to_q4', cat: 'tolerance',catLabel: 'Tolerance',                   catEmoji: '🌿',   label: 'Steady in Dualities (Sukha/Dukha)',                         max: 1 },
+    { id: 'to_q5', cat: 'tolerance',catLabel: 'Tolerance',                   catEmoji: '🌿',   label: 'Forgiveness Practice (Chhodo, Aage Bado)',                  max: 1 },
+    { id: 'to_q6', cat: 'tolerance',catLabel: 'Tolerance',                   catEmoji: '🌿',   label: 'Continue Seva Despite Difficulty (Mood ho Ya Na ho)',       max: 1 },
+];
+
+// Category definitions for grouping (reports / mini-badges)
+const TAPAH2_CATS = [
+    { id: 'chanting',  label: 'Focus on Chanting',           emoji: '🧘‍♂️' },
+    { id: 'prajalpa',  label: 'No Prajalpa',                 emoji: '🧘'   },
+    { id: 'vaishnav',  label: 'Vaishnav Aparadha',        emoji: '🙏'   },
+    { id: 'maryada',   label: 'Interaction Discipline',      emoji: '🚫'   },
+    { id: 'skill',     label: 'Harmonium / Skill',           emoji: '🎹'   },
+    { id: 'tolerance', label: 'Tolerance',                   emoji: '🌿'   },
+];
+
+const TAPAH2_MAX = TAPAH2_QUESTIONS.reduce((s, q) => s + q.max, 0); // 5+5+4+5+15+6 = 40
+
+let _tapah2Index     = 0;
+let _tapah2Scores    = {}; // { questionId: number }
+let _tapah2EditingDate = null;
+// (no binary auto-advance — all questions use numeric input)
+let _tapah2Chart     = null;
+
+function setupTapah2DateSelect() {
+    const s = document.getElementById('tapah2-date');
+    if (!s) return;
+    const todayStr = toLocalDateStr(new Date());
+    s.min = APP_START_DATE;
+    s.max = todayStr;
+    s.value = todayStr;
+    s.disabled = false;
+    updateTapah2DateStatus(todayStr);
+}
+
+function updateTapah2DateStatus(dateStr) {
+    const badge = document.getElementById('tapah2-date-status');
+    const hint  = document.getElementById('tapah2-date-hint');
+    if (!badge) return;
+    const todayStr = toLocalDateStr(new Date());
+    if (!dateStr) { badge.textContent = '—'; badge.style.background = '#f0f0f0'; badge.style.color = '#888'; return; }
+    if (dateStr === todayStr) {
+        badge.textContent = '📆 Today';
+        badge.style.background = '#fef0e7'; badge.style.color = '#e67e22';
+        if (hint) hint.textContent = 'Filling today\'s entry';
+    } else {
+        badge.textContent = '⏳ Checking…';
+        badge.style.background = '#f0f0f0'; badge.style.color = '#888';
+    }
+}
+
+window.onTapah2DateChange = async (dateStr) => {
+    if (!dateStr || !currentUser) return;
+    const badge = document.getElementById('tapah2-date-status');
+    const hint  = document.getElementById('tapah2-date-hint');
+    const todayStr = toLocalDateStr(new Date());
+
+    // Reset state (keep date)
+    _tapah2Scores = {};
+    _tapah2Index  = 0;
+    _tapah2EditingDate = null;
+    const banner  = document.getElementById('tapah2-edit-banner');
+    const submit  = document.getElementById('tapah2-submit-btn');
+    const done    = document.getElementById('tapah2-done-screen');
+    const card    = document.getElementById('tapah2-card');
+    if (banner) banner.style.display = 'none';
+    if (submit) submit.style.display = 'none';
+    if (done)   done.style.display   = 'none';
+    if (card)   { card.style.display = 'block'; card.style.opacity = '1'; card.style.transform = 'none'; }
+
+    if (badge) { badge.textContent = '⏳'; badge.style.background = '#f0f0f0'; badge.style.color = '#888'; }
+
+    try {
+        const snap = await db.collection('users').doc(currentUser.uid).collection('tapah2').doc(dateStr).get();
+        if (snap.exists) {
+            const d = snap.data();
+            TAPAH2_QUESTIONS.forEach(q => {
+                if (d.scores && d.scores[q.id] !== undefined) _tapah2Scores[q.id] = d.scores[q.id];
+            });
+            _tapah2EditingDate = dateStr;
+            const bannerText = document.getElementById('tapah2-edit-banner-text');
+            if (banner) banner.style.display = 'flex';
+            if (bannerText) bannerText.textContent = `Editing Tapah-2: ${dateStr}`;
+            if (badge) { badge.textContent = '✅ Filled'; badge.style.background = '#e8f8f0'; badge.style.color = '#27ae60'; }
+            if (hint) hint.textContent = 'Entry exists — editing it now';
+        } else {
+            if (badge) {
+                if (dateStr === todayStr) {
+                    badge.textContent = '📆 Today'; badge.style.background = '#fef0e7'; badge.style.color = '#e67e22';
+                    if (hint) hint.textContent = 'New entry for today';
+                } else {
+                    badge.textContent = '⚠️ NR'; badge.style.background = '#fff3cd'; badge.style.color = '#856404';
+                    if (hint) hint.textContent = 'No entry yet — filling now';
+                }
+            }
+        }
+    } catch (err) {
+        if (badge) { badge.textContent = '❌ Error'; badge.style.background = '#fde8e8'; badge.style.color = '#e74c3c'; }
+        if (hint) hint.textContent = err.code || err.message;
+    }
+    renderTapah2Card(0);
+    updateTapah2Totals();
+};
+
+function resetTapah2Form() {
+    _tapah2Scores      = {};
+    _tapah2Index       = 0;
+    _tapah2EditingDate = null;
+    setupTapah2DateSelect();
+    const banner  = document.getElementById('tapah2-edit-banner');
+    const submit  = document.getElementById('tapah2-submit-btn');
+    const done    = document.getElementById('tapah2-done-screen');
+    const card    = document.getElementById('tapah2-card');
+    if (banner) banner.style.display = 'none';
+    if (submit) submit.style.display = 'none';
+    if (done)   done.style.display   = 'none';
+    if (card)   { card.style.display = 'block'; card.style.opacity = '1'; card.style.transform = 'none'; }
+    renderTapah2Card(0);
+    updateTapah2Totals();
+}
+
+window.cancelTapah2Edit = () => {
+    resetTapah2Form();
+    const badge = document.getElementById('tapah2-date-status');
+    const hint  = document.getElementById('tapah2-date-hint');
+    if (badge) { badge.textContent = '📆 Today'; badge.style.background = '#fef0e7'; badge.style.color = '#e67e22'; }
+    if (hint)  hint.textContent = 'Filling today\'s entry';
+};
+
+// ── Card renderer — one card per category ──────
+function renderTapah2Card(idx) {
+    const cat = TAPAH2_CATS[idx];
+    if (!cat) return;
+    const card    = document.getElementById('tapah2-card');
+    const counter = document.getElementById('tapah2-card-counter');
+    const bar     = document.getElementById('tapah2-progress-bar');
+    if (!card) return;
+
+    if (counter) counter.textContent = `Part ${idx + 1} / ${TAPAH2_CATS.length}`;
+    if (bar)     bar.style.width = `${(idx / TAPAH2_CATS.length) * 100}%`;
+
+    const catQs  = TAPAH2_QUESTIONS.filter(q => q.cat === cat.id);
+    const catMax = catQs.reduce((s, q) => s + q.max, 0);
+    const isLast = idx === TAPAH2_CATS.length - 1;
+
+    const questionsHTML = catQs.map(q => {
+        const existing   = _tapah2Scores[q.id];
+        const rangeLabel = q.max === 1 ? '−1 to +1' : `−${q.max} to +${q.max}`;
+        return `<div style="padding:11px 0;border-bottom:1px solid #f0f0f0;">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+                <div style="flex:1;">
+                    <div style="font-size:14px;font-weight:600;color:#2c3e50;line-height:1.4;">${q.label}</div>
+                    <div style="font-size:11px;color:#bbb;margin-top:2px;">${rangeLabel}</div>
+                </div>
+                <div style="display:flex;align-items:center;gap:5px;flex-shrink:0;">
+                    <input type="number" id="tapah2-input-${q.id}" min="-${q.max}" max="${q.max}" step="1"
+                        placeholder="0" value="${existing !== undefined ? existing : ''}"
+                        style="width:62px;padding:8px 4px;border:2px solid #e67e22;border-radius:8px;font-size:18px;font-weight:800;text-align:center;background:#fef9f5;color:#e67e22;"
+                        oninput="updateTapah2Totals()">
+                    <span style="font-size:12px;color:#aaa;font-weight:700;">/${q.max}</span>
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+
+    const catScore = catQs.reduce((s, q) => s + (_tapah2Scores[q.id] !== undefined ? _tapah2Scores[q.id] : 0), 0);
+    const subtotalColor = catScore > 0 ? '#27ae60' : catScore < 0 ? '#e74c3c' : '#aaa';
+
+    card.innerHTML = `<div style="padding:16px 20px 16px;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-bottom:12px;border-bottom:2px solid #fde8d0;">
+            <span style="font-size:22px;line-height:1;">${cat.emoji}</span>
+            <div>
+                <div style="font-size:19px;font-weight:800;color:#2c3e50;line-height:1.2;">${cat.label}</div>
+                <div style="font-size:12px;color:#aaa;margin-top:2px;">Part ${idx + 1} of ${TAPAH2_CATS.length} &nbsp;·&nbsp; max ${catMax}</div>
+            </div>
+        </div>
+        ${questionsHTML}
+        <div id="tapah2-cat-subtotal" style="margin-top:10px;text-align:right;font-size:13px;font-weight:700;color:${subtotalColor};">
+            ${cat.label}: ${catScore > 0 ? '+' : ''}${catScore} / ${catMax}
+        </div>
+        <div style="display:flex;gap:10px;margin-top:14px;">
+            <button type="button" onclick="tapah2CardBack()"
+                style="flex:1;padding:12px;border-radius:10px;border:2px solid #ddd;background:#f8f9fa;color:#555;font-weight:700;font-size:13px;width:auto;margin:0;cursor:pointer;">
+                ← Back
+            </button>
+            <button type="button" onclick="tapah2CardNext()"
+                style="flex:2;padding:12px;border-radius:10px;border:none;background:#e67e22;color:white;font-weight:700;font-size:14px;width:auto;margin:0;cursor:pointer;">
+                ${isLast ? '✅ Done' : 'Next →'}
+            </button>
+        </div>
+    </div>`;
+    // Focus first input
+    setTimeout(() => {
+        const first = document.getElementById(`tapah2-input-${catQs[0].id}`);
+        if (first) { first.focus(); first.select(); }
+    }, 250);
+}
+
+// ── Slide animation helper ──────────────────────
+function tapah2Animate(targetIdx, direction) {
+    const card = document.getElementById('tapah2-card');
+    const outX = direction === 'forward' ? '-20px' : '20px';
+    const inX  = direction === 'forward' ? '20px'  : '-20px';
+    if (card) { card.style.opacity = '0'; card.style.transform = `translateX(${outX})`; }
+    setTimeout(() => {
+        _tapah2Index = targetIdx;
+        renderTapah2Card(targetIdx);
+        if (card) {
+            card.style.transition = 'none';
+            card.style.transform  = `translateX(${inX})`;
+            card.style.opacity    = '0';
+            setTimeout(() => {
+                card.style.transition = 'opacity 0.25s ease, transform 0.25s ease';
+                card.style.opacity    = '1';
+                card.style.transform  = 'translateX(0)';
+            }, 20);
+        }
+        updateTapah2Totals();
+    }, 220);
+}
+
+// ── Save all inputs for the current category card ──
+function _tapah2SaveCurrentCard() {
+    const cat = TAPAH2_CATS[_tapah2Index];
+    if (!cat) return;
+    TAPAH2_QUESTIONS.filter(q => q.cat === cat.id).forEach(q => {
+        const inp = document.getElementById(`tapah2-input-${q.id}`);
+        if (!inp) return;
+        const raw = parseInt(inp.value, 10);
+        if (!isNaN(raw)) _tapah2Scores[q.id] = Math.max(-q.max, Math.min(q.max, raw));
+        // if empty/incomplete, leave existing _tapah2Scores[q.id] unchanged
+    });
+}
+
+// ── Next / Back navigation ──────────────────────
+window.tapah2CardNext = () => {
+    _tapah2SaveCurrentCard();
+    const next = _tapah2Index + 1;
+    if (next < TAPAH2_CATS.length) tapah2Animate(next, 'forward');
+    else showTapah2DoneScreen();
+};
+
+window.tapah2CardBack = () => {
+    if (_tapah2Index === 0) return;
+    _tapah2SaveCurrentCard();
+    tapah2Animate(_tapah2Index - 1, 'backward');
+};
+
+// ── Live totals & mini-badges ───────────────────
+// Safe score getter — uses explicit undefined check so 0 and negatives are preserved
+function _t2s(id) { return _tapah2Scores[id] !== undefined ? _tapah2Scores[id] : 0; }
+
+function updateTapah2Totals() {
+    // Step 1: flush ALL visible inputs on the current card into _tapah2Scores
+    const activeCat = TAPAH2_CATS[_tapah2Index];
+    if (activeCat) {
+        TAPAH2_QUESTIONS.filter(q => q.cat === activeCat.id).forEach(q => {
+            const inp = document.getElementById(`tapah2-input-${q.id}`);
+            if (!inp) return;
+            const raw = parseInt(inp.value, 10);
+            if (!isNaN(raw)) {
+                const cl = Math.max(-q.max, Math.min(q.max, raw));
+                _tapah2Scores[q.id] = cl;
+                if (inp.value !== String(cl)) inp.value = cl;
+            }
+            // if input is empty/incomplete (e.g. just typed '-'), leave _tapah2Scores as-is
+        });
+
+        // Update the category subtotal on the card
+        const catQs  = TAPAH2_QUESTIONS.filter(q => q.cat === activeCat.id);
+        const catMax = catQs.reduce((s, q) => s + q.max, 0);
+        const catScore = catQs.reduce((s, q) => s + _t2s(q.id), 0);
+        const sub = document.getElementById('tapah2-cat-subtotal');
+        if (sub) {
+            const col = catScore > 0 ? '#27ae60' : catScore < 0 ? '#e74c3c' : '#aaa';
+            sub.style.color = col;
+            sub.textContent = `${activeCat.label}: ${catScore > 0 ? '+' : ''}${catScore} / ${catMax}`;
+        }
+    }
+
+    // Step 2: compute grand total from _tapah2Scores (all questions, explicit check)
+    let total = 0;
+    TAPAH2_QUESTIONS.forEach(q => { total += _t2s(q.id); });
+    const pct   = Math.round((total / TAPAH2_MAX) * 100);
+    const color = pct >= 50 ? '#27ae60' : pct >= 0 ? '#f39c12' : '#e74c3c';
+
+    const td = document.getElementById('tapah2-total-display');
+    const pp = document.getElementById('tapah2-percent-display');
+    if (td) { td.textContent = `${total > 0 ? '+' : ''}${total}/${TAPAH2_MAX}`; td.style.color = color; }
+    if (pp) { pp.textContent = `${pct}%`; pp.style.color = color; }
+
+    // Mini category badges
+    const catEl = document.getElementById('tapah2-category-totals');
+    if (catEl) {
+        catEl.innerHTML = TAPAH2_CATS.map(cat => {
+            const catQs   = TAPAH2_QUESTIONS.filter(q2 => q2.cat === cat.id);
+            const catMax  = catQs.reduce((s, q2) => s + q2.max, 0);
+            const catSc   = catQs.reduce((s, q2) => s + _t2s(q2.id), 0);
+            const anyDone = catQs.some(q2 => _tapah2Scores[q2.id] !== undefined);
+            const cp      = anyDone ? Math.round((catSc / catMax) * 100) : null;
+            const col     = !anyDone ? '#ccc' : cp >= 50 ? '#27ae60' : cp >= 0 ? '#f39c12' : '#e74c3c';
+            return `<div style="flex:1;min-width:70px;background:white;border-radius:8px;padding:6px 6px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,0.07);border-top:3px solid ${col};">
+                <div style="font-size:10px;color:#888;line-height:1.2;margin-bottom:2px;">${cat.emoji} ${cat.label.split(' ').slice(0,2).join(' ')}</div>
+                <div style="font-size:13px;font-weight:700;color:${col};">${anyDone ? (catSc > 0 ? '+' : '') + catSc + '/' + catMax : '–'}</div>
+            </div>`;
+        }).join('');
+    }
+}
+
+// ── Done screen ─────────────────────────────────
+function showTapah2DoneScreen() {
+    const card   = document.getElementById('tapah2-card');
+    const done   = document.getElementById('tapah2-done-screen');
+    const submit = document.getElementById('tapah2-submit-btn');
+    const bar    = document.getElementById('tapah2-progress-bar');
+
+    if (card) card.style.display = 'none';
+    if (bar)  bar.style.width = '100%';
+
+    let total = 0;
+    TAPAH2_QUESTIONS.forEach(q => { total += _t2s(q.id); });
+    const pct   = Math.round((total / TAPAH2_MAX) * 100);
+    const color = pct >= 50 ? '#27ae60' : pct >= 0 ? '#f39c12' : '#e74c3c';
+
+    const doneScore = document.getElementById('tapah2-done-score');
+    const donePct   = document.getElementById('tapah2-done-pct');
+    if (doneScore) { doneScore.textContent = `${total > 0 ? '+' : ''}${total} / ${TAPAH2_MAX}`; doneScore.style.color = color; }
+    if (donePct)   { donePct.textContent = `${pct}%`; donePct.style.color = color; }
+    if (done)   done.style.display   = 'block';
+    if (submit) submit.style.display = 'block';
+}
+
+window.tapah2FlashReview = () => {
+    // Go to first category that has any unfilled question, else first category
+    const firstIncompleteCat = TAPAH2_CATS.findIndex(cat =>
+        TAPAH2_QUESTIONS.filter(q => q.cat === cat.id).some(q => _tapah2Scores[q.id] === undefined)
+    );
+    _tapah2Index = firstIncompleteCat >= 0 ? firstIncompleteCat : 0;
+    const card   = document.getElementById('tapah2-card');
+    const done   = document.getElementById('tapah2-done-screen');
+    const submit = document.getElementById('tapah2-submit-btn');
+    if (card)   { card.style.display = 'block'; card.style.opacity = '1'; card.style.transform = 'none'; }
+    if (done)   done.style.display   = 'none';
+    if (submit) submit.style.display = 'none';
+    renderTapah2Card(_tapah2Index);
+    updateTapah2Totals();
+};
+
+// ── Submit ──────────────────────────────────────
+window.submitTapah2 = async () => {
+    if (!currentUser) { alert('Please login first'); return; }
+    const date = document.getElementById('tapah2-date')?.value;
+    if (!date) { alert('Please select a date.'); return; }
+
+    const unfilled = TAPAH2_QUESTIONS.filter(q => _tapah2Scores[q.id] === undefined);
+    if (unfilled.length > 0) {
+        const go = confirm(`${unfilled.length} question(s) not answered. Submit anyway (counted as 0)?`);
+        if (!go) { window.tapah2FlashReview(); return; }
+    }
+
+    const scores = {};
+    let total = 0;
+    TAPAH2_QUESTIONS.forEach(q => {
+        scores[q.id] = Math.max(-q.max, Math.min(q.max, _t2s(q.id)));
+        total += scores[q.id];
+    });
+    const percent = Math.round((total / TAPAH2_MAX) * 100);
+
+    try {
+        await db.collection('users').doc(currentUser.uid).collection('tapah2').doc(date).set({
+            scores, totalScore: total, percent,
+            submittedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        const isEdit = _tapah2EditingDate !== null;
+        alert(`${isEdit ? 'Updated' : 'Saved'}! Tapah-2 Score: ${total}/${TAPAH2_MAX} (${percent}%)`);
+        resetTapah2Form();
+    } catch (err) {
+        alert('Could not save Tapah-2.\nError: ' + (err.code || err.message));
+    }
+};
+
+// ── Edit past entry (called from report edit buttons) ───
+window.editTapah2Entry = async (dateStr) => {
+    switchMainTab('tapah2');
+    switchSubTab('tapah2', 'entry');
+    const sel = document.getElementById('tapah2-date');
+    if (sel) { sel.value = dateStr; sel.disabled = false; }
+    await onTapah2DateChange(dateStr);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+
+// ── TAPAH-2 REPORT ──────────────────────────────
+
+const _tapah2Expanded = new Set();
+
+window.toggleTapah2Group = (key) => {
+    if (_tapah2Expanded.has(key)) _tapah2Expanded.delete(key);
+    else _tapah2Expanded.add(key);
+    renderTapah2Report(window._tapah2AllData || {});
+};
+
+async function loadTapah2Report() {
+    const container = document.getElementById('tapah2-report-container');
+    if (!container) return;
+    container.innerHTML = '<p style="color:#aaa;text-align:center;padding:30px;">Loading Tapah-2 data…</p>';
+    try {
+        const snap = await db.collection('users').doc(currentUser.uid).collection('tapah2').get();
+        const allData = {};
+        snap.forEach(doc => { allData[doc.id] = doc.data(); });
+        window._tapah2AllData = allData;
+        // Auto-expand current month + week so marks are visible immediately
+        const _today = new Date();
+        const _sun   = new Date(_today); _sun.setDate(_today.getDate() - _today.getDay());
+        _tapah2Expanded.add('month_' + toLocalDateStr(_sun).slice(0, 7));
+        _tapah2Expanded.add('week_'  + toLocalDateStr(_sun));
+        renderTapah2Report(allData);
+    } catch (err) {
+        container.innerHTML = `<div style="text-align:center;padding:30px;background:#fff0f0;border-radius:10px;color:#e74c3c;">
+            <div style="font-size:24px;margin-bottom:8px;">⚠️</div>
+            <div style="font-weight:700;">Could not load Tapah-2 data</div>
+            <div style="font-size:13px;color:#666;margin:6px 0 6px;">Check your internet connection.</div>
+            <div style="font-size:11px;color:#aaa;margin-bottom:14px;font-family:monospace;">${err.code || err.message}</div>
+            <button onclick="loadTapah2Report()" style="padding:8px 20px;background:#3498db;color:white;border:none;border-radius:8px;font-weight:700;cursor:pointer;width:auto;">🔄 Retry</button>
+        </div>`;
+    }
+}
+
+function renderTapah2Report(allData) {
+    const container = document.getElementById('tapah2-report-container');
+    if (!container) return;
+
+    const today          = new Date();
+    const todayStr       = toLocalDateStr(today);
+    const thisWeekSun    = new Date(today); thisWeekSun.setDate(today.getDate() - today.getDay());
+    const thisWeekSunStr = toLocalDateStr(thisWeekSun);
+
+    const allDates = new Set(Object.keys(allData).filter(d => d >= APP_START_DATE));
+    for (let i = 0; i < 7; i++) {
+        const d = new Date(thisWeekSun); d.setDate(thisWeekSun.getDate() + i);
+        const ds = toLocalDateStr(d);
+        if (ds <= todayStr && ds >= APP_START_DATE) allDates.add(ds);
+    }
+    if (allDates.size === 0) {
+        container.innerHTML = '<p style="color:#aaa;text-align:center;padding:30px;">No Tapah-2 data yet. Start tracking!</p>';
+        return;
+    }
+
+    // Group by week then month
+    const weekMap = {};
+    [...allDates].sort().forEach(ds => {
+        const d = new Date(ds + 'T00:00:00');
+        const sun = new Date(d); sun.setDate(d.getDate() - d.getDay());
+        const sunStr = toLocalDateStr(sun);
+        if (!weekMap[sunStr]) weekMap[sunStr] = [];
+        weekMap[sunStr].push(ds);
+    });
+    const monthMap = {};
+    Object.keys(weekMap).sort().forEach(sunStr => {
+        const mk = weekMap[sunStr][0].slice(0, 7);
+        if (!monthMap[mk]) monthMap[mk] = [];
+        monthMap[mk].push(sunStr);
+    });
+
+    const T2M  = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const T2ML = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const fmtD = ds => { const d = new Date(ds+'T00:00:00'); return `${String(d.getDate()).padStart(2,'0')} ${T2M[d.getMonth()]}`; };
+    const fmtM = ym => { const [y,m] = ym.split('-'); return `${T2ML[parseInt(m,10)-1]} ${y}`; };
+    const fmtW = sun => { const s = new Date(sun+'T00:00:00'); const e = new Date(s); e.setDate(s.getDate()+6); return `${fmtD(sun)} – ${fmtD(toLocalDateStr(e))}`; };
+    const sCol = pct => pct >= 70 ? '#27ae60' : pct >= 50 ? '#f39c12' : '#e74c3c';
+
+    // Helper: compute category score from an entry
+    const catScore = (entry, catId) => {
+        if (!entry) return null;
+        const catQs = TAPAH2_QUESTIONS.filter(q => q.cat === catId);
+        return catQs.reduce((s, q) => s + (entry.scores?.[q.id] ?? 0), 0);
+    };
+    const catMax = catId => TAPAH2_QUESTIONS.filter(q => q.cat === catId).reduce((s,q) => s+q.max, 0);
+
+    let html = '';
+    Object.keys(monthMap).sort().reverse().forEach(mk => {
+        const weeks = monthMap[mk].slice().reverse();
+        const mFilled  = weeks.flatMap(w => weekMap[w]).filter(d => allData[d]);
+        const mTotal   = mFilled.reduce((s,d) => s+(allData[d]?.totalScore||0), 0);
+        const mElapsed = weeks.reduce((sum, s) => sum + (s === thisWeekSunStr ? weekMap[s].length : 7), 0);
+        const mMax     = mElapsed * TAPAH2_MAX;
+        const mPct     = mMax > 0 ? Math.round(mTotal/mMax*100) : 0;
+        const mExpand  = _tapah2Expanded.has('month_'+mk);
+
+        html += `<div style="margin-bottom:10px;">
+            <div onclick="toggleTapah2Group('month_${mk}')"
+                style="background:#2c3e50;color:white;padding:12px 16px;border-radius:${mExpand?'8px 8px 0 0':'8px'};cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
+                <div style="font-weight:700;font-size:14px;">${fmtM(mk)}</div>
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <span style="font-size:13px;color:${sCol(mPct)};font-weight:700;">${mPct}%</span>
+                    <span style="font-size:11px;opacity:0.7;">${mExpand?'▼':'▶'}</span>
+                </div>
+            </div>`;
+
+        if (mExpand) {
+            html += `<div style="background:#f8f9fa;border:1px solid #e0e0e0;border-top:none;border-radius:0 0 8px 8px;padding:8px;">`;
+            weeks.forEach(sunStr => {
+                const wDates   = weekMap[sunStr];
+                const wFilled  = wDates.filter(d => allData[d]);
+                const wTotal   = wFilled.reduce((s,d) => s+(allData[d]?.totalScore||0), 0);
+                const isCur    = sunStr === thisWeekSunStr;
+                const wElapsed = isCur ? wDates.length : 7;
+                const wMax     = wElapsed * TAPAH2_MAX;
+                const wPct     = wMax > 0 ? Math.round(wTotal/wMax*100) : 0;
+                const wExpand  = _tapah2Expanded.has('week_'+sunStr);
+
+                html += `<div style="margin-bottom:6px;border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08);">
+                    <div onclick="toggleTapah2Group('week_${sunStr}')"
+                        style="background:white;padding:12px 16px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;border-left:4px solid #e67e22;">
+                        <div>
+                            <div style="font-weight:700;font-size:13px;color:#2c3e50;">${fmtW(sunStr)}${isCur?' <span style="font-size:10px;background:#e67e22;color:white;padding:1px 7px;border-radius:10px;margin-left:4px;">Current</span>':''}</div>
+                            <div style="font-size:11px;color:#888;margin-top:2px;">${wFilled.length} day(s) filled · ${wTotal}/${wMax} pts</div>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <span style="font-size:15px;font-weight:700;color:${sCol(wPct)};">${wPct}%</span>
+                            <span style="font-size:11px;color:#aaa;">${wExpand?'▼':'▶'}</span>
+                        </div>
+                    </div>`;
+
+                if (wExpand) {
+                    html += `<div style="overflow-x:auto;background:white;border-top:1px solid #f0f0f0;">
+                        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+                            <thead><tr>
+                                <th style="padding:8px 10px;background:#fef0e7;text-align:left;color:#2c3e50;font-weight:700;white-space:nowrap;min-width:140px;">Category</th>
+                                <th style="padding:8px;background:#fef0e7;text-align:center;color:#888;font-weight:600;">Max</th>`;
+                    wDates.forEach(ds => {
+                        const d = new Date(ds+'T00:00:00');
+                        const day = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()];
+                        html += `<th style="padding:8px;background:#fef0e7;text-align:center;color:#2c3e50;font-weight:600;white-space:nowrap;">${day}<br><span style="font-weight:400;font-size:10px;">${fmtD(ds)}</span></th>`;
+                    });
+                    html += `<th style="padding:8px;background:#fef0e7;text-align:center;color:#e67e22;font-weight:700;">Total</th></tr></thead><tbody>`;
+
+                    TAPAH2_CATS.forEach((cat, ci) => {
+                        const cm   = catMax(cat.id);
+                        const rowBg = ci % 2 === 0 ? '#fff' : '#fafafa';
+                        let rowTotal = 0;
+                        let cells = '';
+                        wDates.forEach(ds => {
+                            const entry = allData[ds];
+                            const sc    = entry ? catScore(entry, cat.id) : null;
+                            if (sc !== null) rowTotal += sc;
+                            const cp  = (sc !== null && sc !== undefined) ? Math.round((sc/cm)*100) : null;
+                            const col = !entry ? '#ccc' : sCol(cp);
+                            cells += `<td style="padding:8px;text-align:center;background:${rowBg};color:${col};font-weight:${entry?'700':'400'};">${entry ? sc : '–'}</td>`;
+                        });
+                        html += `<tr>
+                            <td style="padding:8px 10px;background:${rowBg};color:#2c3e50;font-weight:600;">${cat.emoji} ${cat.label}</td>
+                            <td style="padding:8px;text-align:center;background:${rowBg};color:#aaa;">${cm}</td>
+                            ${cells}
+                            <td style="padding:8px;text-align:center;background:${rowBg};font-weight:700;color:#e67e22;">${rowTotal}</td>
+                        </tr>`;
+                    });
+
+                    // Totals row
+                    html += `<tr style="background:#fef0e7;border-top:2px solid #e67e22;">
+                        <td style="padding:8px 10px;font-weight:700;color:#e67e22;">Total</td>
+                        <td style="padding:8px;text-align:center;color:#aaa;font-weight:700;">${TAPAH2_MAX}</td>`;
+                    wDates.forEach(ds => {
+                        const entry = allData[ds];
+                        const sc    = entry?.totalScore;
+                        const cp    = sc !== undefined ? Math.round((sc/TAPAH2_MAX)*100) : null;
+                        const col   = !entry ? '#ccc' : sCol(cp);
+                        html += `<td style="padding:8px;text-align:center;font-weight:700;color:${col};">${entry ? sc : '–'}</td>`;
+                    });
+                    html += `<td style="padding:8px;text-align:center;font-weight:700;color:#e67e22;">${wFilled.reduce((s,d)=>s+(allData[d]?.totalScore||0),0)}</td></tr>`;
+
+                    const editBtns = wFilled.map(ds =>
+                        `<button onclick="editTapah2Entry('${ds}')" style="width:auto;padding:4px 10px;font-size:11px;background:#e67e22;color:white;border:none;border-radius:6px;cursor:pointer;margin:0;">✏️ ${fmtD(ds)}</button>`
+                    ).join('');
+                    if (editBtns) html += `<tr><td colspan="${wDates.length+3}" style="padding:8px;background:#fff;"><div style="display:flex;gap:6px;flex-wrap:wrap;">${editBtns}</div></td></tr>`;
+
+                    html += `</tbody></table></div>`;
+                }
+                html += `</div>`; // end week
+            });
+            html += `</div>`; // end month body
+        }
+        html += `</div>`; // end month
+    });
+
+    container.innerHTML = html || '<p style="color:#aaa;text-align:center;padding:30px;">No Tapah-2 data yet. Start tracking!</p>';
+}
+
+// ── TAPAH-2 PROGRESS ────────────────────────────
+
+async function loadTapah2Progress() {
+    const ringEl = document.getElementById('tapah2-score-ring-container');
+    if (!ringEl) return;
+    ringEl.innerHTML = '<div style="text-align:center;color:#aaa;padding:20px;">Loading…</div>';
+
+    const today       = new Date();
+    const todayStr    = toLocalDateStr(today);
+    const thisWeekSun = new Date(today); thisWeekSun.setDate(today.getDate() - today.getDay());
+
+    try {
+        // Fetch ALL tapah2 data (no range query — avoids index issues)
+        const snap = await db.collection('users').doc(currentUser.uid).collection('tapah2').get();
+        const allData = {};
+        snap.forEach(doc => { allData[doc.id] = doc.data(); });
+
+        // Current week ring
+        const weekDates = [];
+        for (let i = 0; i < 7; i++) {
+            const d = new Date(thisWeekSun); d.setDate(thisWeekSun.getDate() + i);
+            const ds = toLocalDateStr(d);
+            if (ds <= todayStr && ds >= APP_START_DATE) weekDates.push(ds);
+        }
+        const filled    = weekDates.filter(d => allData[d]);
+        const wTotal    = filled.reduce((s,d) => s+(allData[d]?.totalScore??0), 0);
+        const wMax      = weekDates.length * TAPAH2_MAX;
+        const wPct      = wMax > 0 ? Math.round(wTotal/wMax*100) : 0;
+        const ringColor = wPct >= 70 ? '#27ae60' : wPct >= 50 ? '#f39c12' : '#e74c3c';
+
+        const r = 54, circ = Math.round(2*Math.PI*r);
+        const dash = Math.round(circ * Math.max(0,wPct) / 100);
+
+        const catRows = TAPAH2_CATS.map(cat => {
+            const cm    = TAPAH2_QUESTIONS.filter(q=>q.cat===cat.id).reduce((s,q)=>s+q.max,0);
+            const cTot  = filled.reduce((s,d) => {
+                const catQs = TAPAH2_QUESTIONS.filter(q=>q.cat===cat.id);
+                return s + catQs.reduce((ss,q) => ss+(allData[d]?.scores?.[q.id]??0), 0);
+            }, 0);
+            const cMax  = weekDates.length * cm;
+            const cp    = cMax > 0 ? Math.round(cTot/cMax*100) : 0;
+            const cc    = cp >= 70 ? '#27ae60' : cp >= 50 ? '#f39c12' : '#e74c3c';
+            return `<div style="display:flex;align-items:center;gap:6px;margin-top:5px;font-size:12px;">
+                <span style="font-size:14px;">${cat.emoji}</span>
+                <span style="flex:1;color:#555;">${cat.label}</span>
+                <span style="font-size:10px;color:#aaa;white-space:nowrap;">max ${cm}/day</span>
+                <span style="font-weight:700;color:${cc};min-width:36px;text-align:right;">${cTot}/${cMax||'—'}</span>
+            </div>`;
+        }).join('');
+
+        ringEl.innerHTML = `<div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;">
+            <div style="position:relative;flex-shrink:0;">
+                <svg width="130" height="130" style="transform:rotate(-90deg)">
+                    <circle cx="65" cy="65" r="${r}" fill="none" stroke="#e0e0e0" stroke-width="10"/>
+                    <circle cx="65" cy="65" r="${r}" fill="none" stroke="${ringColor}" stroke-width="10"
+                        stroke-dasharray="${dash} ${circ}" stroke-linecap="round"/>
+                </svg>
+                <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;">
+                    <div style="font-size:22px;font-weight:800;color:${ringColor};">${wPct}%</div>
+                    <div style="font-size:10px;color:#888;">This week</div>
+                </div>
+            </div>
+            <div style="flex:1;min-width:160px;">
+                <div style="font-weight:700;font-size:14px;color:#2c3e50;margin-bottom:6px;">📿 Tapah-2 — This Week</div>
+                <div style="font-size:12px;color:#666;margin-bottom:2px;">${filled.length} of ${weekDates.length} day(s) filled</div>
+                <div style="font-size:11px;color:#aaa;margin-bottom:6px;">Max ${TAPAH2_MAX} marks/day</div>
+                <div style="font-size:15px;font-weight:700;color:${ringColor};margin-bottom:8px;">${wTotal} / ${wMax||'—'} pts</div>
+                ${catRows}
+            </div>
+        </div>`;
+
+        // Line chart (last 28 days, filter from allData)
+        const from28Str = toLocalDateStr(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 27));
+        const dates28   = [];
+        for (let i=27;i>=0;i--) { const d=new Date(today);d.setDate(today.getDate()-i);const ds=toLocalDateStr(d);if(ds>=APP_START_DATE)dates28.push(ds); }
+        const labels    = dates28.map(ds=>{const d=new Date(ds+'T00:00:00');return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;});
+        const chartData = dates28.map(ds => {
+            if (allData[ds]) return allData[ds].totalScore ?? 0;
+            if (ds >= APP_START_DATE && ds < todayStr) return 0; // NR past day — drop to 0
+            return null; // today (unfilled) or pre-app-start — skip
+        });
+
+        const canvas = document.getElementById('tapah2-score-chart');
+        if (!canvas) return;
+        if (_tapah2Chart) { _tapah2Chart.destroy(); _tapah2Chart = null; }
+        _tapah2Chart = new Chart(canvas, {
+            type: 'line',
+            data: { labels, datasets: [{ label: 'Tapah-2', data: chartData, borderColor: '#e67e22', backgroundColor: 'rgba(230,126,34,0.08)', borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#e67e22', spanGaps: true, tension: 0.3 }] },
+            options: { responsive: true, plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.y} / ${TAPAH2_MAX}` } } },
+                scales: { y: { max: TAPAH2_MAX, grid: { color: 'rgba(0,0,0,0.06)' }, ticks: { stepSize: Math.ceil(TAPAH2_MAX/5) } }, x: { grid: { display: false }, ticks: { maxRotation: 45, font: { size: 10 } } } } }
+        });
+    } catch (err) {
+        if (ringEl) ringEl.innerHTML = `<div style="color:#e74c3c;padding:20px;text-align:center;">⚠️ Error loading Tapah-2 progress:<br><span style="font-size:12px;font-family:monospace;">${err.code || err.message}</span></div>`;
+    }
+}
+
+// ── END TAPAH-2 MODULE ──
 
 // ══════════════════════════════════════════════
 // --- ACTIVITY ANALYSIS MODAL ---
@@ -2422,7 +3714,7 @@ async function loadActivityAnalysis(period) {
         const d = new Date(weekSun);
         d.setDate(weekSun.getDate() + i);
         const ds = toLocalDateStr(d);
-        if (ds <= toLocalDateStr(today)) weekDates.push(ds);
+        if (ds <= toLocalDateStr(today) && ds >= APP_START_DATE) weekDates.push(ds);
     }
 
     if (weekDates.length === 0) {
@@ -2571,6 +3863,106 @@ window.toggleTapahGroup = (key) => {
     renderTapahReport(window._tapahAllData || {});
 };
 
+// ── TAPAH PROGRESS ──────────────────────────────
+async function loadTapahProgress() {
+    const ringEl = document.getElementById('tapah-score-ring-container');
+    if (!ringEl) return;
+    ringEl.innerHTML = '<div style="text-align:center;color:#aaa;padding:20px;">Loading…</div>';
+
+    const today       = new Date();
+    const todayStr    = toLocalDateStr(today);
+    const thisWeekSun = new Date(today); thisWeekSun.setDate(today.getDate() - today.getDay());
+    const TAPAH_MAX   = 50;
+    const ANUKUL_MAX  = ANUKUL_QUESTIONS.length * 5;   // 5 × 5 = 25
+    const PRATIKUL_MAX = PRATIKUL_QUESTIONS.length * 5; // 5 × 5 = 25
+
+    try {
+        // Fetch ALL tapah data (no range query — avoids index issues)
+        const snap = await db.collection('users').doc(currentUser.uid).collection('tapah').get();
+        const allData = {};
+        snap.forEach(doc => { allData[doc.id] = doc.data(); });
+
+        // Filter last 28 days locally
+        const from28Str = toLocalDateStr(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 27));
+        const data = {};
+        Object.keys(allData).forEach(k => { if (k >= from28Str && k <= todayStr) data[k] = allData[k]; });
+
+        // Current week ring
+        const weekDates = [];
+        for (let i = 0; i < 7; i++) {
+            const d = new Date(thisWeekSun); d.setDate(thisWeekSun.getDate() + i);
+            const ds = toLocalDateStr(d);
+            if (ds <= todayStr && ds >= APP_START_DATE) weekDates.push(ds);
+        }
+        const filled     = weekDates.filter(d => allData[d]);
+        const wTotal     = filled.reduce((s, d) => s + (allData[d]?.totalScore || 0), 0);
+        const wMax       = weekDates.length * TAPAH_MAX;  // max = all elapsed days × 50
+        const wPct       = wMax > 0 ? Math.round(wTotal / wMax * 100) : 0;
+        const ringColor  = wPct >= 70 ? '#27ae60' : wPct >= 50 ? '#f39c12' : '#e74c3c';
+
+        const r = 54, circ = Math.round(2 * Math.PI * r);
+        const dash = Math.round(circ * Math.max(0, wPct) / 100);
+
+        const anukulTot    = filled.reduce((s, d) => s + (allData[d]?.anukulTotal   || 0), 0);
+        const pratikulTot  = filled.reduce((s, d) => s + (allData[d]?.pratikulTotal || 0), 0);
+        const anukulMax    = weekDates.length * ANUKUL_MAX;
+        const pratikulMax  = weekDates.length * PRATIKUL_MAX;
+        const mkColor = (got, max) => max > 0 ? (got/max >= 0.7 ? '#27ae60' : got/max >= 0.5 ? '#f39c12' : '#e74c3c') : '#aaa';
+
+        const secRows = [
+            { label: '🌿 Anukulasya (Favourable)',   got: anukulTot,   max: anukulMax,   perDay: ANUKUL_MAX   },
+            { label: '🚫 Pratikulasya (Unfavourable)', got: pratikulTot, max: pratikulMax, perDay: PRATIKUL_MAX },
+        ].map(sec => `<div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;">
+            <span style="flex:1;color:#555;">${sec.label}</span>
+            <span style="font-size:10px;color:#aaa;white-space:nowrap;">max ${sec.perDay}/day</span>
+            <span style="font-weight:700;color:${mkColor(sec.got, sec.max)};min-width:42px;text-align:right;">${sec.got}/${sec.max || '—'}</span>
+        </div>`).join('');
+
+        ringEl.innerHTML = `<div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;">
+            <div style="position:relative;flex-shrink:0;">
+                <svg width="130" height="130" style="transform:rotate(-90deg)">
+                    <circle cx="65" cy="65" r="${r}" fill="none" stroke="#e0e0e0" stroke-width="10"/>
+                    <circle cx="65" cy="65" r="${r}" fill="none" stroke="${ringColor}" stroke-width="10"
+                        stroke-dasharray="${dash} ${circ}" stroke-linecap="round"/>
+                </svg>
+                <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;">
+                    <div style="font-size:22px;font-weight:800;color:${ringColor};">${wPct}%</div>
+                    <div style="font-size:10px;color:#888;">This week</div>
+                </div>
+            </div>
+            <div style="flex:1;min-width:160px;">
+                <div style="font-weight:700;font-size:14px;color:#2c3e50;margin-bottom:6px;">🌿 Tapah — This Week</div>
+                <div style="font-size:12px;color:#666;margin-bottom:2px;">${filled.length} of ${weekDates.length} day(s) filled</div>
+                <div style="font-size:11px;color:#aaa;margin-bottom:6px;">Max ${TAPAH_MAX} marks/day</div>
+                <div style="font-size:15px;font-weight:700;color:${ringColor};margin-bottom:8px;">${wTotal} / ${wMax} pts</div>
+                ${secRows}
+            </div>
+        </div>`;
+
+        // Line chart (last 28 days)
+        const dates28   = [];
+        for (let i = 27; i >= 0; i--) { const d = new Date(today); d.setDate(today.getDate() - i); const ds = toLocalDateStr(d); if (ds >= APP_START_DATE) dates28.push(ds); }
+        const labels    = dates28.map(ds => { const d = new Date(ds + 'T00:00:00'); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`; });
+        const chartData = dates28.map(ds => {
+            if (allData[ds]) return allData[ds].totalScore ?? 0;
+            if (ds >= APP_START_DATE && ds < todayStr) return 0; // NR past day — drop to 0
+            return null; // today (unfilled) or pre-app-start — skip
+        });
+
+        const canvas = document.getElementById('tapah-score-chart');
+        if (!canvas) return;
+        if (_tapahChart) { _tapahChart.destroy(); _tapahChart = null; }
+        _tapahChart = new Chart(canvas, {
+            type: 'line',
+            data: { labels, datasets: [{ label: 'Tapah', data: chartData, borderColor: '#764ba2', backgroundColor: 'rgba(118,75,162,0.08)', borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#764ba2', spanGaps: true, tension: 0.3 }] },
+            options: { responsive: true, plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.y} / ${TAPAH_MAX}` } } },
+                scales: { y: { max: TAPAH_MAX, grid: { color: 'rgba(0,0,0,0.06)' }, ticks: { stepSize: 10 } }, x: { grid: { display: false }, ticks: { maxRotation: 45, font: { size: 10 } } } } }
+        });
+    } catch (err) {
+        if (ringEl) ringEl.innerHTML = `<div style="color:#e74c3c;padding:20px;text-align:center;">⚠️ Error loading Tapah progress:<br><span style="font-size:12px;font-family:monospace;">${err.code || err.message}</span></div>`;
+    }
+}
+
 async function loadTapahReport() {
     const container = document.getElementById('tapah-report-container');
     if (!container) return;
@@ -2581,6 +3973,11 @@ async function loadTapahReport() {
         const allData = {};
         snap.forEach(doc => { allData[doc.id] = doc.data(); });
         window._tapahAllData = allData;
+        // Auto-expand current month + week
+        const _tn = new Date();
+        const _ts = new Date(_tn); _ts.setDate(_tn.getDate() - _tn.getDay());
+        _tapahExpanded.add('month_' + toLocalDateStr(_ts).slice(0, 7));
+        _tapahExpanded.add('week_'  + toLocalDateStr(_ts));
         renderTapahReport(allData);
     } catch (err) {
         container.innerHTML = `
@@ -2599,327 +3996,203 @@ function renderTapahReport(allData) {
     const container = document.getElementById('tapah-report-container');
     if (!container) return;
 
-    const today = new Date();
-    const todayStr = toLocalDateStr(today);
-
-    // Get current week Sunday
-    const thisWeekSun = new Date(today);
-    thisWeekSun.setDate(today.getDate() - today.getDay());
+    const today          = new Date();
+    const todayStr       = toLocalDateStr(today);
+    const thisWeekSun    = new Date(today); thisWeekSun.setDate(today.getDate() - today.getDay());
     const thisWeekSunStr = toLocalDateStr(thisWeekSun);
 
-    // All questions list
-    const allQuestions = [
-        ...ANUKUL_QUESTIONS.map(q => ({ ...q, section: 'anukul' })),
-        ...PRATIKUL_QUESTIONS.map(q => ({ ...q, section: 'pratikul' }))
-    ];
+    const TM  = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const TML = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const fmtD = ds => { const d = new Date(ds+'T00:00:00'); return `${String(d.getDate()).padStart(2,'0')} ${TM[d.getMonth()]}`; };
+    const fmtM = ym => { const [y,m] = ym.split('-'); return `${TML[parseInt(m,10)-1]} ${y}`; };
+    const fmtW = sun => { const s = new Date(sun+'T00:00:00'); const e = new Date(s); e.setDate(s.getDate()+6); return `${fmtD(sun)} – ${fmtD(toLocalDateStr(e))}`; };
+    const sCol = pct => pct >= 70 ? '#27ae60' : pct >= 50 ? '#f39c12' : '#e74c3c';
 
-    // --- Build timeline: group dates into weeks, weeks into months ---
-    // Find all dates that have data OR are in the current week
-    const allDates = new Set(Object.keys(allData));
-
-    // Always include current week dates up to today
+    // Build date set — only actual data dates
+    const allDates = new Set(Object.keys(allData).filter(d => d >= APP_START_DATE));
+    // Also include current week dates up to today
     for (let i = 0; i < 7; i++) {
-        const d = new Date(thisWeekSun);
-        d.setDate(thisWeekSun.getDate() + i);
+        const d = new Date(thisWeekSun); d.setDate(thisWeekSun.getDate() + i);
         const ds = toLocalDateStr(d);
-        if (ds <= todayStr) allDates.add(ds);
+        if (ds <= todayStr && ds >= APP_START_DATE) allDates.add(ds);
     }
-
     if (allDates.size === 0) {
         container.innerHTML = '<p style="color:#aaa;text-align:center;padding:30px;">No Tapah data yet. Start tracking!</p>';
         return;
     }
 
-    // Group dates by week (Sun–Sat)
+    // Group into week → month
     const weekMap = {};
-    [...allDates].sort().forEach(dateStr => {
-        const d = new Date(dateStr + 'T00:00:00');
+    [...allDates].sort().forEach(ds => {
+        const d = new Date(ds+'T00:00:00');
         const sun = new Date(d); sun.setDate(d.getDate() - d.getDay());
         const sunStr = toLocalDateStr(sun);
         if (!weekMap[sunStr]) weekMap[sunStr] = [];
-        weekMap[sunStr].push(dateStr);
+        weekMap[sunStr].push(ds);
     });
-
-    // Group weeks by month
     const monthMap = {};
     Object.keys(weekMap).sort().forEach(sunStr => {
-        // Use the month of the majority of days in the week
-        const firstDay = weekMap[sunStr][0];
-        const monthKey = firstDay.slice(0, 7); // YYYY-MM
-        if (!monthMap[monthKey]) monthMap[monthKey] = [];
-        monthMap[monthKey].push(sunStr);
+        const mk = weekMap[sunStr][0].slice(0, 7);
+        if (!monthMap[mk]) monthMap[mk] = [];
+        monthMap[mk].push(sunStr);
     });
 
-    const sortedMonths = Object.keys(monthMap).sort();
-
-    // Helper: cell color based on answer
-    const cellColor = (val, section) => {
-        if (!val || val === 'nr') return '#f8f9fa';
-        if (val === 'yes')     return section === 'anukul' ? '#c8f7c5' : '#ffd5d5';
-        if (val === 'partial') return '#fff3cd';
-        if (val === 'no')      return section === 'anukul' ? '#ffd5d5' : '#c8f7c5';
-        return '#f8f9fa';
+    // Cell value helpers
+    const ansColor = (val, sec) => {
+        if (!val) return { bg: '#f8f9fa', tc: '#ccc' };
+        if (sec === 'anukul') {
+            if (val === 'yes')     return { bg: '#c8f7c5', tc: '#27ae60' };
+            if (val === 'partial') return { bg: '#fff3cd', tc: '#f39c12' };
+            return { bg: '#fde8e8', tc: '#e74c3c' };
+        } else {
+            if (val === 'yes')     return { bg: '#fde8e8', tc: '#e74c3c' };
+            if (val === 'partial') return { bg: '#fff3cd', tc: '#f39c12' };
+            return { bg: '#c8f7c5', tc: '#27ae60' };
+        }
     };
-    const cellTextColor = (val, section) => {
-        if (!val || val === 'nr') return '#aaa';
-        if (val === 'yes')     return section === 'anukul' ? '#27ae60' : '#e74c3c';
-        if (val === 'partial') return '#f39c12';
-        if (val === 'no')      return section === 'anukul' ? '#e74c3c' : '#27ae60';
-        return '#aaa';
-    };
-    const cellLabel = (val) => {
-        if (!val || val === 'nr') return '–';
-        if (val === 'yes') return 'Y';
-        if (val === 'partial') return 'P';
-        if (val === 'no') return 'N';
-        return '–';
-    };
-    // scoreLabel removed - was unused dead code
-
-    // Format date label: "01 Mar"
-    const _TAPAH_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const _TAPAH_MONTHS_LONG = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-    const fmtDate = (ds) => {
-        const d = new Date(ds + 'T00:00:00');
-        return `${String(d.getDate()).padStart(2,'0')} ${_TAPAH_MONTHS[d.getMonth()]}`;
-    };
-    const fmtMonth = (ym) => {
-        const [y, m] = ym.split('-');
-        return `${_TAPAH_MONTHS_LONG[parseInt(m,10)-1]} ${y}`;
-    };
-    const fmtWeek = (sunStr) => {
-        const sun = new Date(sunStr + 'T00:00:00');
-        const sat = new Date(sun); sat.setDate(sun.getDate() + 6);
-        return `${fmtDate(sunStr)} – ${fmtDate(toLocalDateStr(sat))}`;
+    const scoreLabel = (val, sec) => {
+        if (!val) return '–';
+        const sc = sec === 'anukul' ? getAanukulScore(val) : getPratikulScore(val);
+        const ans = val === 'yes' ? 'Y' : val === 'partial' ? 'P' : 'N';
+        return `${ans} <span style="font-size:10px;opacity:0.8;">(${sc>=0?'+':''}${sc})</span>`;
     };
 
-    // Score summary for a list of dates
-    const summarize = (dates) => {
-        const totals = {}; // qid → total score
-        let grandTotal = 0, maxPossible = 0;
-        allQuestions.forEach(q => { totals[q.id] = 0; });
-        dates.forEach(ds => {
-            const entry = allData[ds];
-            if (!entry) return;
-            maxPossible += 50;
-            grandTotal += entry.totalScore || 0;
-            allQuestions.forEach(q => {
-                const ans = entry[q.section]?.[q.id];
-                const sc = q.section === 'anukul' ? getAanukulScore(ans || 'no') : getPratikulScore(ans || 'no');
-                totals[q.id] += sc;
-            });
-        });
-        return { totals, grandTotal, maxPossible };
-    };
+    let html = '';
+    Object.keys(monthMap).sort().reverse().forEach(mk => {
+        const weeks = monthMap[mk].slice().reverse();
+        const mFilled  = weeks.flatMap(w => weekMap[w]).filter(d => allData[d]);
+        const mTotal   = mFilled.reduce((s,d) => s+(allData[d]?.totalScore||0), 0);
+        const mElapsed = weeks.reduce((sum, s) => sum + (s === thisWeekSunStr ? weekMap[s].length : 7), 0);
+        const mMax     = mElapsed * 50;
+        const mPct     = mMax > 0 ? Math.round(mTotal/mMax*100) : 0;
+        const mExpand  = _tapahExpanded.has('month_'+mk);
 
-    // ---- BUILD HTML ----
-    // Fixed left columns: Sr, Particular, T-Dur
-    // Then dynamic columns based on expanded/collapsed state
+        html += `<div style="margin-bottom:10px;">
+            <div onclick="toggleTapahGroup('month_${mk}')"
+                style="background:#2c3e50;color:white;padding:12px 16px;border-radius:${mExpand?'8px 8px 0 0':'8px'};cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
+                <div style="font-weight:700;font-size:14px;">${fmtM(mk)}</div>
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <span style="font-size:13px;color:${sCol(mPct)};font-weight:700;">${mPct}%</span>
+                    <span style="font-size:11px;opacity:0.7;">${mExpand?'▼':'▶'}</span>
+                </div>
+            </div>`;
 
-    // Build column definitions
-    // Each column is either: { type:'day', date } | { type:'week', sunStr, dates } | { type:'month', monthKey, dates }
-    const columns = [];
-    const isCurrentWeek = (sunStr) => sunStr === thisWeekSunStr;
+        if (mExpand) {
+            html += `<div style="background:#f8f9fa;border:1px solid #e0e0e0;border-top:none;border-radius:0 0 8px 8px;padding:8px;">`;
+            weeks.forEach(sunStr => {
+                const wDates   = weekMap[sunStr];
+                const wFilled  = wDates.filter(d => allData[d]);
+                const wTotal   = wFilled.reduce((s,d) => s+(allData[d]?.totalScore||0), 0);
+                const isCur    = sunStr === thisWeekSunStr;
+                const wElapsed = isCur ? wDates.length : 7;
+                const wMax     = wElapsed * 50;
+                const wPct     = wMax > 0 ? Math.round(wTotal/wMax*100) : 0;
+                const wExpand  = _tapahExpanded.has('week_'+sunStr);
 
-    sortedMonths.forEach(monthKey => {
-        const weeksInMonth = monthMap[monthKey];
-        const monthDates = weeksInMonth.flatMap(w => weekMap[w]).filter(d => allData[d] || d <= todayStr);
-        const monthExpanded = _tapahExpanded.has('month_' + monthKey);
+                html += `<div style="margin-bottom:6px;border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08);">
+                    <div onclick="toggleTapahGroup('week_${sunStr}')"
+                        style="background:white;padding:12px 16px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;border-left:4px solid #764ba2;">
+                        <div>
+                            <div style="font-weight:700;font-size:13px;color:#2c3e50;">${fmtW(sunStr)}${isCur?' <span style="font-size:10px;background:#764ba2;color:white;padding:1px 7px;border-radius:10px;margin-left:4px;">Current</span>':''}</div>
+                            <div style="font-size:11px;color:#888;margin-top:2px;">${wFilled.length} day(s) filled · ${wTotal}/${wMax} pts</div>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <span style="font-size:15px;font-weight:700;color:${sCol(wPct)};">${wPct}%</span>
+                            <span style="font-size:11px;color:#aaa;">${wExpand?'▼':'▶'}</span>
+                        </div>
+                    </div>`;
 
-        if (monthExpanded) {
-            // Show each week inside this month
-            weeksInMonth.forEach(sunStr => {
-                const weekDates = weekMap[sunStr].filter(d => d <= todayStr);
-                const weekExpanded = _tapahExpanded.has('week_' + sunStr) || isCurrentWeek(sunStr);
-
-                if (weekExpanded) {
-                    // Show individual days
-                    weekDates.forEach(ds => {
-                        columns.push({ type: 'day', date: ds, parentWeek: sunStr, parentMonth: monthKey });
+                if (wExpand) {
+                    // Table: questions as rows, dates as columns
+                    const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+                    html += `<div style="overflow-x:auto;background:white;border-top:1px solid #f0f0f0;">
+                        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+                            <thead><tr>
+                                <th style="padding:8px 10px;background:#f0eaf8;text-align:left;color:#2c3e50;font-weight:700;white-space:nowrap;min-width:200px;">Question</th>
+                                <th style="padding:8px 6px;background:#f0eaf8;text-align:center;color:#888;font-weight:600;white-space:nowrap;">Max</th>`;
+                    wDates.forEach(ds => {
+                        const d = new Date(ds+'T00:00:00');
+                        html += `<th style="padding:8px;background:#f0eaf8;text-align:center;color:#2c3e50;font-weight:600;white-space:nowrap;">${dayNames[d.getDay()]}<br><span style="font-weight:400;font-size:10px;">${fmtD(ds)}</span></th>`;
                     });
-                    // Week total column (collapsible back)
-                    columns.push({ type: 'weekTotal', sunStr, dates: weekDates, parentMonth: monthKey });
-                } else {
-                    // Show collapsed week column
-                    columns.push({ type: 'week', sunStr, dates: weekDates, parentMonth: monthKey });
+                    html += `<th style="padding:8px;background:#f0eaf8;text-align:center;color:#764ba2;font-weight:700;">Total</th></tr></thead><tbody>`;
+
+                    // Anukul section
+                    html += `<tr><td colspan="${3+wDates.length}" style="background:#e8f8f0;font-weight:700;color:#27ae60;padding:6px 10px;font-size:11px;letter-spacing:0.4px;">🌿 ANUKULASYA (Favourable) — max 5/day each</td></tr>`;
+                    ANUKUL_QUESTIONS.forEach((q, qi) => {
+                        const rowBg = qi % 2 === 0 ? '#fff' : '#fafafa';
+                        let rowTotal = 0;
+                        let cells = '';
+                        wDates.forEach(ds => {
+                            const entry = allData[ds];
+                            const val = entry?.anukul?.[q.id] || null;
+                            const sc = val ? getAanukulScore(val) : null;
+                            if (sc !== null) rowTotal += sc;
+                            const { bg, tc } = ansColor(val, 'anukul');
+                            cells += `<td style="padding:7px 4px;text-align:center;background:${rowBg};">
+                                ${entry ? `<span style="background:${bg};color:${tc};padding:2px 6px;border-radius:4px;font-weight:700;font-size:11px;white-space:nowrap;">${val==='yes'?'Y':val==='partial'?'P':val==='no'?'N':'–'} <span style="font-size:9px;">(${sc>=0?'+':''}${sc??'–'})</span></span>` : '<span style="color:#ccc;">–</span>'}
+                            </td>`;
+                        });
+                        const rowMax = wElapsed * 5;
+                        const rPct = rowMax > 0 ? Math.round(rowTotal/rowMax*100) : 0;
+                        html += `<tr>
+                            <td style="padding:7px 10px;background:${rowBg};color:#2c3e50;">${q.label}${q.target?`<span style="color:#aaa;font-size:10px;margin-left:4px;">(${q.target})</span>`:''}</td>
+                            <td style="padding:7px 6px;background:${rowBg};text-align:center;color:#888;">5</td>
+                            ${cells}
+                            <td style="padding:7px 6px;text-align:center;background:${rowBg};font-weight:700;color:${sCol(rPct)};">${rowMax>0?rowTotal:'–'}</td>
+                        </tr>`;
+                    });
+
+                    // Pratikul section
+                    html += `<tr><td colspan="${3+wDates.length}" style="background:#fde8e8;font-weight:700;color:#e74c3c;padding:6px 10px;font-size:11px;letter-spacing:0.4px;">🚫 PRATIKULASYA (Unfavourable) — max 5/day each</td></tr>`;
+                    PRATIKUL_QUESTIONS.forEach((q, qi) => {
+                        const rowBg = qi % 2 === 0 ? '#fff' : '#fafafa';
+                        let rowTotal = 0;
+                        let cells = '';
+                        wDates.forEach(ds => {
+                            const entry = allData[ds];
+                            const val = entry?.pratikul?.[q.id] || null;
+                            const sc = val ? getPratikulScore(val) : null;
+                            if (sc !== null) rowTotal += sc;
+                            const { bg, tc } = ansColor(val, 'pratikul');
+                            cells += `<td style="padding:7px 4px;text-align:center;background:${rowBg};">
+                                ${entry ? `<span style="background:${bg};color:${tc};padding:2px 6px;border-radius:4px;font-weight:700;font-size:11px;white-space:nowrap;">${val==='yes'?'Y':val==='partial'?'P':val==='no'?'N':'–'} <span style="font-size:9px;">(${sc>=0?'+':''}${sc??'–'})</span></span>` : '<span style="color:#ccc;">–</span>'}
+                            </td>`;
+                        });
+                        const rowMax = wElapsed * 5;
+                        const rPct = rowMax > 0 ? Math.round(rowTotal/rowMax*100) : 0;
+                        html += `<tr>
+                            <td style="padding:7px 10px;background:${rowBg};color:#2c3e50;">${q.label}</td>
+                            <td style="padding:7px 6px;background:${rowBg};text-align:center;color:#888;">5</td>
+                            ${cells}
+                            <td style="padding:7px 6px;text-align:center;background:${rowBg};font-weight:700;color:${sCol(rPct)};">${rowMax>0?rowTotal:'–'}</td>
+                        </tr>`;
+                    });
+
+                    // Total row
+                    let totalCells = '';
+                    wDates.forEach(ds => {
+                        const entry = allData[ds];
+                        const sc = entry?.totalScore ?? null;
+                        const bg = sc === null ? '#f8f9fa' : sc >= 35 ? '#c8f7c5' : sc >= 20 ? '#fff3cd' : '#fde8e8';
+                        const tc = sc === null ? '#aaa' : sc >= 35 ? '#27ae60' : sc >= 20 ? '#f39c12' : '#e74c3c';
+                        totalCells += `<td style="padding:8px 4px;text-align:center;background:${bg};font-weight:800;color:${tc};font-size:13px;">${sc !== null ? `${sc}<span style="font-size:10px;font-weight:400;">/50</span>` : '–'}</td>`;
+                    });
+                    html += `<tr style="border-top:2px solid #e0e0e0;">
+                        <td colspan="2" style="padding:8px 10px;font-weight:700;font-size:12px;color:#2c3e50;background:#f8f9fa;">Total Score</td>
+                        ${totalCells}
+                        <td style="padding:8px 6px;text-align:center;background:#f0eaf8;font-weight:800;color:${sCol(wPct)};font-size:13px;">${wTotal}<span style="font-size:10px;font-weight:400;">/${wMax}</span></td>
+                    </tr>`;
+
+                    html += `</tbody></table></div>`;
                 }
+                html += `</div>`;
             });
-            // Month total column (collapsible back)
-            columns.push({ type: 'monthTotal', monthKey, dates: monthDates });
-        } else {
-            // Show collapsed month column
-            columns.push({ type: 'month', monthKey, dates: monthDates });
+            html += `</div>`;
         }
+        html += `</div>`;
     });
 
-    // Build header row
-    let headerCells = '';
-    columns.forEach(col => {
-        if (col.type === 'day') {
-            const isToday = col.date === todayStr;
-            headerCells += `<th style="min-width:44px;padding:6px 3px;font-size:11px;background:#3498db;color:white;text-align:center;white-space:nowrap;${isToday?'background:#1a5276;':''}">${fmtDate(col.date)}</th>`;
-        } else if (col.type === 'week') {
-            headerCells += `<th onclick="toggleTapahGroup('week_${col.sunStr}')" style="min-width:80px;padding:6px 4px;font-size:11px;background:#2980b9;color:white;text-align:center;cursor:pointer;white-space:nowrap;" title="Click to expand">${fmtWeek(col.sunStr)} ▶</th>`;
-        } else if (col.type === 'weekTotal') {
-            headerCells += `<th onclick="toggleTapahGroup('week_${col.sunStr}')" style="min-width:60px;padding:6px 4px;font-size:11px;background:#1a6b9a;color:white;text-align:center;cursor:pointer;white-space:nowrap;" title="Click to collapse">Wk Total ◀</th>`;
-        } else if (col.type === 'month') {
-            headerCells += `<th onclick="toggleTapahGroup('month_${col.monthKey}')" style="min-width:90px;padding:6px 4px;font-size:11px;background:#8e44ad;color:white;text-align:center;cursor:pointer;white-space:nowrap;" title="Click to expand">${fmtMonth(col.monthKey)} ▶</th>`;
-        } else if (col.type === 'monthTotal') {
-            headerCells += `<th onclick="toggleTapahGroup('month_${col.monthKey}')" style="min-width:70px;padding:6px 4px;font-size:11px;background:#6c3483;color:white;text-align:center;cursor:pointer;white-space:nowrap;" title="Click to collapse">Mo Total ◀</th>`;
-        }
-    });
-
-    // Build section rows
-    let bodyRows = '';
-
-    // Section header: ANUKULASYA
-    bodyRows += `<tr><td colspan="3" style="background:#e8f8f0;font-weight:700;color:#27ae60;padding:8px 10px;font-size:12px;letter-spacing:0.5px;">🌿 ANUKULASYA (Favourable)</td>${columns.map(col => `<td style="background:#e8f8f0;"></td>`).join('')}</tr>`;
-
-    ANUKUL_QUESTIONS.forEach((q, idx) => {
-        let cells = '';
-        columns.forEach(col => {
-            if (col.type === 'day') {
-                const entry = allData[col.date];
-                const val = entry?.anukul?.[q.id] || null;
-                const isFuture = col.date > todayStr;
-                if (isFuture) {
-                    cells += `<td style="background:#f8f9fa;text-align:center;font-size:11px;color:#ccc;">–</td>`;
-                } else {
-                    cells += `<td style="background:${cellColor(val,'anukul')};text-align:center;font-size:12px;font-weight:600;color:${cellTextColor(val,'anukul')};padding:5px 2px;" title="${val||'No entry'}">${cellLabel(val)}</td>`;
-                }
-            } else {
-                // Summary column
-                const { totals, maxPossible } = summarize(col.dates.filter(d => allData[d]));
-                const sc = totals[q.id] || 0;
-                const maxSc = col.dates.filter(d => allData[d]).length * 5;
-                const pct = maxSc > 0 ? Math.round(sc / maxSc * 100) : 0;
-                const bg = pct >= 70 ? '#c8f7c5' : pct >= 40 ? '#fff3cd' : maxSc > 0 ? '#ffd5d5' : '#f8f9fa';
-                const tc = pct >= 70 ? '#27ae60' : pct >= 40 ? '#f39c12' : maxSc > 0 ? '#e74c3c' : '#aaa';
-                cells += `<td style="background:${bg};text-align:center;font-size:12px;font-weight:700;color:${tc};padding:5px 2px;">${maxSc > 0 ? sc : '–'}</td>`;
-            }
-        });
-        bodyRows += `<tr>
-            <td style="padding:6px 8px;font-size:12px;text-align:center;color:#555;">${idx+1}</td>
-            <td style="padding:6px 8px;font-size:12px;color:#2c3e50;">${q.label}</td>
-            <td style="padding:6px 8px;font-size:11px;color:#888;text-align:center;white-space:nowrap;">${q.target||''}</td>
-            ${cells}
-        </tr>`;
-    });
-
-    // Section header: PRATIKULASYA
-    bodyRows += `<tr><td colspan="3" style="background:#fde8e8;font-weight:700;color:#e74c3c;padding:8px 10px;font-size:12px;letter-spacing:0.5px;">🚫 PRATIKULASYA (Unfavourable)</td>${columns.map(col => `<td style="background:#fde8e8;"></td>`).join('')}</tr>`;
-
-    PRATIKUL_QUESTIONS.forEach((q, idx) => {
-        let cells = '';
-        columns.forEach(col => {
-            if (col.type === 'day') {
-                const entry = allData[col.date];
-                const val = entry?.pratikul?.[q.id] || null;
-                const isFuture = col.date > todayStr;
-                if (isFuture) {
-                    cells += `<td style="background:#f8f9fa;text-align:center;font-size:11px;color:#ccc;">–</td>`;
-                } else {
-                    cells += `<td style="background:${cellColor(val,'pratikul')};text-align:center;font-size:12px;font-weight:600;color:${cellTextColor(val,'pratikul')};padding:5px 2px;" title="${val||'No entry'}">${cellLabel(val)}</td>`;
-                }
-            } else {
-                const { totals } = summarize(col.dates.filter(d => allData[d]));
-                const sc = totals[q.id] || 0;
-                const maxSc = col.dates.filter(d => allData[d]).length * 5;
-                const pct = maxSc > 0 ? Math.round(sc / maxSc * 100) : 0;
-                const bg = pct >= 70 ? '#c8f7c5' : pct >= 40 ? '#fff3cd' : maxSc > 0 ? '#ffd5d5' : '#f8f9fa';
-                const tc = pct >= 70 ? '#27ae60' : pct >= 40 ? '#f39c12' : maxSc > 0 ? '#e74c3c' : '#aaa';
-                cells += `<td style="background:${bg};text-align:center;font-size:12px;font-weight:700;color:${tc};padding:5px 2px;">${maxSc > 0 ? sc : '–'}</td>`;
-            }
-        });
-        bodyRows += `<tr>
-            <td style="padding:6px 8px;font-size:12px;text-align:center;color:#555;">${idx+1}</td>
-            <td style="padding:6px 8px;font-size:12px;color:#2c3e50;">${q.label}</td>
-            <td style="padding:6px 8px;font-size:11px;color:#888;text-align:center;"></td>
-            ${cells}
-        </tr>`;
-    });
-
-    // Total row
-    let totalCells = '';
-    columns.forEach(col => {
-        const datesWithData = col.dates ? col.dates.filter(d => allData[d]) : (allData[col.date] ? [col.date] : []);
-        if (col.type === 'day') {
-            const entry = allData[col.date];
-            const sc = entry?.totalScore ?? null;
-            const isFuture = col.date > todayStr;
-            if (isFuture) {
-                totalCells += `<td style="background:#f8f9fa;text-align:center;font-size:11px;color:#ccc;font-weight:700;">–</td>`;
-            } else {
-                const bg = sc === null ? '#f8f9fa' : sc >= 35 ? '#c8f7c5' : sc >= 20 ? '#fff3cd' : '#ffd5d5';
-                const tc = sc === null ? '#aaa' : sc >= 35 ? '#27ae60' : sc >= 20 ? '#f39c12' : '#e74c3c';
-                totalCells += `<td style="background:${bg};text-align:center;font-size:12px;font-weight:700;color:${tc};padding:5px 2px;">${sc !== null ? sc : '–'}</td>`;
-            }
-        } else {
-            const { grandTotal, maxPossible } = summarize(datesWithData);
-            const pct = maxPossible > 0 ? Math.round(grandTotal / maxPossible * 100) : 0;
-            const bg = pct >= 70 ? '#c8f7c5' : pct >= 40 ? '#fff3cd' : maxPossible > 0 ? '#ffd5d5' : '#f8f9fa';
-            const tc = pct >= 70 ? '#27ae60' : pct >= 40 ? '#f39c12' : maxPossible > 0 ? '#e74c3c' : '#aaa';
-            totalCells += `<td style="background:${bg};text-align:center;font-size:12px;font-weight:700;color:${tc};padding:5px 2px;">${maxPossible > 0 ? grandTotal : '–'}</td>`;
-        }
-    });
-
-    // % row
-    let pctCells = '';
-    columns.forEach(col => {
-        const datesWithData = col.dates ? col.dates.filter(d => allData[d]) : (allData[col.date] ? [col.date] : []);
-        if (col.type === 'day') {
-            const entry = allData[col.date];
-            const pct = entry ? Math.round((entry.totalScore || 0) / 50 * 100) : null;
-            const isFuture = col.date > todayStr;
-            if (isFuture) {
-                pctCells += `<td style="text-align:center;font-size:11px;color:#ccc;">–</td>`;
-            } else {
-                const tc = pct === null ? '#aaa' : pct >= 70 ? '#27ae60' : pct >= 40 ? '#f39c12' : '#e74c3c';
-                pctCells += `<td style="text-align:center;font-size:11px;font-weight:700;color:${tc};">${pct !== null ? pct+'%' : '–'}</td>`;
-            }
-        } else {
-            const { grandTotal, maxPossible } = summarize(datesWithData);
-            const pct = maxPossible > 0 ? Math.round(grandTotal / maxPossible * 100) : null;
-            const tc = pct === null ? '#aaa' : pct >= 70 ? '#27ae60' : pct >= 40 ? '#f39c12' : '#e74c3c';
-            pctCells += `<td style="text-align:center;font-size:11px;font-weight:700;color:${tc};">${pct !== null ? pct+'%' : '–'}</td>`;
-        }
-    });
-
-    // Legend
-    const legend = `
-        <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px;font-size:12px;align-items:center;">
-            <span style="font-weight:600;color:#555;">Legend:</span>
-            <span style="background:#c8f7c5;color:#27ae60;padding:2px 10px;border-radius:4px;font-weight:600;">Y = Yes</span>
-            <span style="background:#fff3cd;color:#f39c12;padding:2px 10px;border-radius:4px;font-weight:600;">P = Partial</span>
-            <span style="background:#ffd5d5;color:#e74c3c;padding:2px 10px;border-radius:4px;font-weight:600;">N = No</span>
-            <span style="color:#888;font-size:11px;">| Click week/month headers to expand ▶ or collapse ◀</span>
-        </div>`;
-
-    container.innerHTML = `
-        ${legend}
-        <div style="overflow-x:auto;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,0.08);">
-        <table style="border-collapse:collapse;width:100%;font-family:'Segoe UI',sans-serif;min-width:400px;">
-            <thead>
-                <tr style="background:#2c3e50;color:white;">
-                    <th style="padding:8px 6px;font-size:12px;text-align:center;min-width:32px;">Sr</th>
-                    <th style="padding:8px 10px;font-size:12px;text-align:left;min-width:180px;">Particular</th>
-                    <th style="padding:8px 6px;font-size:11px;text-align:center;min-width:48px;">T-Dur</th>
-                    ${headerCells}
-                </tr>
-            </thead>
-            <tbody>
-                ${bodyRows}
-                <tr style="background:#f0f4ff;">
-                    <td colspan="3" style="padding:7px 10px;font-weight:700;font-size:12px;color:#2c3e50;">Total (50)</td>
-                    ${totalCells}
-                </tr>
-                <tr style="background:#e8f0fe;">
-                    <td colspan="3" style="padding:7px 10px;font-weight:700;font-size:12px;color:#2c3e50;">Percentage</td>
-                    ${pctCells}
-                </tr>
-            </tbody>
-        </table>
-        </div>`;
+    container.innerHTML = html || '<p style="color:#aaa;text-align:center;padding:30px;">No Tapah data yet. Start tracking!</p>';
 }
 function setupDateSelect() {
     const s = document.getElementById('sadhana-date');
