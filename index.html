@@ -32,18 +32,28 @@
         .tab-content { display: none; }
         .tab-content.active { display: block; }
         .week-card { background: white; margin-bottom: 10px; border-radius: 8px; border-left: 5px solid var(--secondary); box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-        .week-header { padding: 15px; cursor: pointer; display: flex; justify-content: space-between; font-weight: bold; }
+        .week-header { padding: 15px; cursor: pointer; display: flex; justify-content: space-between; font-weight: bold; align-items: center; gap: 8px; }
+        .week-header > span { white-space: nowrap; font-size: 13px; }
         .week-content { padding: 15px; border-top: 1px solid #eee; display: none; }
         .week-content.expanded { display: block; }
         .comparison-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        .comparison-table th, .comparison-table td { border: 1px solid #ddd; padding: 12px; text-align: center; }
+        .comparison-table th, .comparison-table td { border: 1px solid #ddd; padding: 10px 8px; text-align: center; font-size: 13px; }
         .comparison-table th { background: var(--secondary); color: white; font-weight: 600; }
+        .comparison-table td:first-child { white-space: nowrap; }
         .comparison-table tr:hover { background: #f5f5f5; }
-        .daily-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.9em; }
+        .daily-table { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 10px; font-size: 0.9em; }
         .daily-table th, .daily-table td { border: 1px solid #eee; padding: 8px; text-align: center; }
         .daily-table thead th { background: #2c3e50 !important; color: white !important; font-weight: 600; }
         .daily-table tbody td { text-align: center; }
         .daily-table tr:hover { background: #f9f9f9; }
+        /* Freeze P/F and Date columns */
+        .daily-table th:nth-child(1), .daily-table td:nth-child(1) { position: sticky; left: 0; z-index: 2; background: inherit; }
+        .daily-table th:nth-child(2), .daily-table td:nth-child(2) { position: sticky; left: 44px; z-index: 2; background: inherit; box-shadow: 2px 0 4px rgba(0,0,0,0.06); }
+        .daily-table thead th:nth-child(1), .daily-table thead th:nth-child(2) { z-index: 3; }
+        .daily-table tbody tr { background: white; }
+        .daily-table tbody tr:hover { background: #f9f9f9; }
+        .daily-table tbody tr[style*="background:#fff8f8"] td:nth-child(1),
+        .daily-table tbody tr[style*="background:#fff8f8"] td:nth-child(2) { background: #fff8f8; }
         .score-positive { color: var(--success); font-weight: bold; }
         .score-negative { color: var(--danger); font-weight: bold; }
         .score-neutral { color: #666; }
@@ -305,6 +315,10 @@
                                         style="width:auto;padding:8px 16px;font-size:13px;background:var(--success);color:white;border:none;border-radius:20px;cursor:pointer;white-space:nowrap;margin:0;font-weight:600;">
                                         ⬇ Excel
                                     </button>
+                                    <button onclick="downloadMasterExcel()"
+                                        style="width:auto;padding:8px 16px;font-size:13px;background:#8e44ad;color:white;border:none;border-radius:20px;cursor:pointer;white-space:nowrap;margin:0;font-weight:600;">
+                                        ⬇ Master
+                                    </button>
                                 </div>
                             </div>
                             <input type="file" id="import-excel-input" accept=".xlsx,.xls,.csv" style="display:none;" onchange="importExcelFile(this)">
@@ -377,8 +391,14 @@
                     <button onclick="cancelTapahEdit()" style="width:auto;padding:5px 14px;background:#6c757d;font-size:13px;margin:0;border-radius:6px;">✕ Cancel Edit</button>
                 </div>
                 <div class="card" style="margin-bottom:16px;padding:14px 18px;">
-                    <label><strong>Date:</strong></label>
-                    <select id="tapah-date" required></select>
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+                        <strong style="font-size:14px;color:#2c3e50;">📅 Select Date</strong>
+                        <span id="tapah-date-status" style="font-size:12px;padding:3px 10px;border-radius:20px;font-weight:700;background:#f0f0f0;color:#888;">—</span>
+                    </div>
+                    <input type="date" id="tapah-date" required
+                        style="width:100%;padding:10px 14px;border:2px solid #764ba2;border-radius:10px;font-size:15px;font-weight:600;color:#2c3e50;background:#faf8ff;box-sizing:border-box;"
+                        onchange="onTapahDateChange(this.value)">
+                    <div id="tapah-date-hint" style="font-size:11px;color:#aaa;margin-top:6px;text-align:center;">Pick any date from app start to today</div>
                 </div>
                 <div id="tapah-flashcard-area" class="card" style="margin-bottom:16px;padding:0;overflow:hidden;position:relative;min-height:320px;">
                     <div style="background:#f0f0f0;height:5px;">
@@ -443,18 +463,140 @@
 
                 <!-- Tapah Reports sub-tab -->
                 <div id="tapah-reports-subtab" class="tapah-subtab-content" style="display:none;">
+                    <div class="card" style="padding:14px 18px;margin-bottom:14px;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                <span style="font-size:18px;">🌿</span>
+                                <strong style="color:#764ba2;font-size:14px;">Tapah History</strong>
+                            </div>
+                            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                                <button onclick="document.getElementById('import-tapah-input').click()"
+                                    style="width:auto;padding:7px 14px;font-size:12px;background:#3498db;color:white;border:none;border-radius:20px;cursor:pointer;white-space:nowrap;margin:0;font-weight:600;">⬆ Import</button>
+                                <button onclick="downloadTapahExcel()"
+                                    style="width:auto;padding:7px 14px;font-size:12px;background:#27ae60;color:white;border:none;border-radius:20px;cursor:pointer;white-space:nowrap;margin:0;font-weight:600;">⬇ Excel</button>
+                            </div>
+                        </div>
+                        <input type="file" id="import-tapah-input" accept=".xlsx,.xls" style="display:none;" onchange="importTapahExcel(this)">
+                    </div>
                     <div id="tapah-report-container"></div>
                 </div>
 
-                <!-- Tapah Progress sub-tab (placeholder) -->
+                <!-- Tapah Progress sub-tab -->
                 <div id="tapah-progress-subtab" class="tapah-subtab-content" style="display:none;">
-                    <div class="card" style="text-align:center;padding:40px 20px;color:#888;">
-                        <div style="font-size:36px;margin-bottom:10px;">📈</div>
-                        <div style="font-weight:600;">Tapah Progress</div>
-                        <div style="font-size:13px;margin-top:6px;">Coming soon</div>
+                    <div class="card">
+                        <div id="tapah-score-ring-container" style="padding:16px;background:#f8f9fa;border-radius:10px;margin-bottom:20px;"></div>
+                        <h4 style="margin:0 0 10px;color:var(--primary);">📈 Tapah Progress (Last 28 Days)</h4>
+                        <canvas id="tapah-score-chart"></canvas>
+                        <div style="text-align:center;color:#888;font-size:12px;margin-top:6px;">Daily max: 50 marks</div>
                     </div>
                 </div>
             </div><!-- /tapah-main-tab -->
+
+            <!-- ========== TAPAH-2 TAB ========== -->
+            <div id="tapah2-main-tab" class="main-tab-content" style="display:none;">
+                <!-- Sub-tabs -->
+                <div style="display:flex;gap:0;background:white;border-radius:12px;overflow:hidden;margin-bottom:16px;box-shadow:0 2px 6px rgba(0,0,0,0.06);">
+                    <button onclick="switchSubTab('tapah2','entry')" class="sub-tab-btn tapah2-sub active"
+                        style="flex:1;padding:12px;border:none;background:#e67e22;color:white;font-weight:600;font-size:13px;cursor:pointer;margin:0;border-radius:0;">📿 Entry</button>
+                    <button onclick="switchSubTab('tapah2','reports')" class="sub-tab-btn tapah2-sub"
+                        style="flex:1;padding:12px;border:none;background:#f0f0f0;color:#666;font-weight:600;font-size:13px;cursor:pointer;margin:0;border-radius:0;">📄 Reports</button>
+                    <button onclick="switchSubTab('tapah2','progress')" class="sub-tab-btn tapah2-sub"
+                        style="flex:1;padding:12px;border:none;background:#f0f0f0;color:#666;font-weight:600;font-size:13px;cursor:pointer;margin:0;border-radius:0;">📈 Progress</button>
+                </div>
+
+                <!-- Tapah-2 Entry sub-tab -->
+                <div id="tapah2-entry-subtab" class="tapah2-subtab-content">
+                    <div id="tapah2-tab">
+                        <div id="tapah2-edit-banner" style="display:none;background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:10px 15px;margin-bottom:12px;align-items:center;justify-content:space-between;gap:10px;">
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                <span style="font-size:18px;">✏️</span>
+                                <span id="tapah2-edit-banner-text" style="font-weight:600;color:#856404;"></span>
+                            </div>
+                            <button onclick="cancelTapah2Edit()" style="width:auto;padding:5px 14px;background:#6c757d;font-size:13px;margin:0;border-radius:6px;">✕ Cancel Edit</button>
+                        </div>
+                        <div class="card" style="margin-bottom:16px;padding:14px 18px;">
+                            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+                                <strong style="font-size:14px;color:#2c3e50;">📅 Select Date</strong>
+                                <span id="tapah2-date-status" style="font-size:12px;padding:3px 10px;border-radius:20px;font-weight:700;background:#f0f0f0;color:#888;">—</span>
+                            </div>
+                            <input type="date" id="tapah2-date" required
+                                style="width:100%;padding:10px 14px;border:2px solid #e67e22;border-radius:10px;font-size:15px;font-weight:600;color:#2c3e50;background:#fef9f5;box-sizing:border-box;"
+                                onchange="onTapah2DateChange(this.value)">
+                            <div id="tapah2-date-hint" style="font-size:11px;color:#aaa;margin-top:6px;text-align:center;">Pick any date from app start to today</div>
+                        </div>
+                        <!-- Flashcard area -->
+                        <div id="tapah2-flashcard-area" class="card" style="margin-bottom:16px;padding:0;overflow:hidden;position:relative;min-height:380px;">
+                            <div style="background:#f0f0f0;height:5px;">
+                                <div id="tapah2-progress-bar" style="height:5px;background:linear-gradient(90deg,#e67e22,#f39c12);width:0%;transition:width 0.4s ease;border-radius:3px;"></div>
+                            </div>
+                            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 18px 0;">
+                                <span id="tapah2-card-counter" style="font-size:12px;color:#888;font-weight:600;">Q 1 / 28</span>
+                                <span style="font-size:11px;padding:2px 10px;border-radius:20px;font-weight:700;background:#fef0e7;color:#e67e22;">📿 Tapah-2</span>
+                            </div>
+                            <!-- Active card — fully rendered by renderTapah2Card() -->
+                            <div id="tapah2-card" style="transition:opacity 0.2s ease,transform 0.2s ease;"></div>
+                            <!-- Done screen -->
+                            <div id="tapah2-done-screen" style="display:none;padding:30px 20px;text-align:center;">
+                                <div style="font-size:48px;margin-bottom:12px;">📿</div>
+                                <div style="font-weight:700;font-size:18px;color:#e67e22;margin-bottom:6px;">All Done!</div>
+                                <div id="tapah2-done-score" style="font-size:28px;font-weight:700;color:#2c3e50;margin-bottom:4px;"></div>
+                                <div id="tapah2-done-pct" style="font-size:14px;color:#888;margin-bottom:20px;"></div>
+                                <button type="button" onclick="tapah2FlashReview()"
+                                    style="width:auto;padding:10px 24px;background:#f8f9fa;color:#2c3e50;border:2px solid #ddd;border-radius:8px;font-weight:600;font-size:13px;cursor:pointer;">
+                                    👁 Review
+                                </button>
+                            </div>
+                        </div>
+                        <!-- Category mini-score badges -->
+                        <div id="tapah2-category-totals" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;"></div>
+                        <!-- Total bar -->
+                        <div style="display:flex;align-items:center;justify-content:space-between;background:white;border-radius:12px;padding:14px 18px;box-shadow:0 2px 8px rgba(0,0,0,0.07);margin-bottom:16px;">
+                            <div>
+                                <div style="font-size:11px;color:#e67e22;font-weight:600;margin-bottom:2px;">Total Score</div>
+                                <div id="tapah2-total-display" style="font-size:1.6em;font-weight:800;color:#e67e22;">0/41</div>
+                            </div>
+                            <div style="text-align:right;">
+                                <div style="font-size:11px;color:#888;font-weight:600;margin-bottom:2px;">Percentage</div>
+                                <div id="tapah2-percent-display" style="font-size:1.6em;font-weight:800;color:#2c3e50;">0%</div>
+                            </div>
+                        </div>
+                        <button type="button" id="tapah2-submit-btn" onclick="submitTapah2()"
+                            style="background:#e67e22;width:100%;padding:14px;color:white;border:none;border-radius:10px;font-weight:700;font-size:15px;cursor:pointer;display:none;">
+                            📿 Submit Tapah-2
+                        </button>
+                    </div><!-- /tapah2-tab -->
+                </div><!-- /tapah2-entry-subtab -->
+
+                <!-- Tapah-2 Reports sub-tab -->
+                <div id="tapah2-reports-subtab" class="tapah2-subtab-content" style="display:none;">
+                    <div class="card" style="padding:14px 18px;margin-bottom:14px;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                <span style="font-size:18px;">📿</span>
+                                <strong style="color:#e67e22;font-size:14px;">Tapah-2 History</strong>
+                            </div>
+                            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                                <button onclick="document.getElementById('import-tapah2-input').click()"
+                                    style="width:auto;padding:7px 14px;font-size:12px;background:#3498db;color:white;border:none;border-radius:20px;cursor:pointer;white-space:nowrap;margin:0;font-weight:600;">⬆ Import</button>
+                                <button onclick="downloadTapah2Excel()"
+                                    style="width:auto;padding:7px 14px;font-size:12px;background:#27ae60;color:white;border:none;border-radius:20px;cursor:pointer;white-space:nowrap;margin:0;font-weight:600;">⬇ Excel</button>
+                            </div>
+                        </div>
+                        <input type="file" id="import-tapah2-input" accept=".xlsx,.xls" style="display:none;" onchange="importTapah2Excel(this)">
+                    </div>
+                    <div id="tapah2-report-container"></div>
+                </div>
+
+                <!-- Tapah-2 Progress sub-tab -->
+                <div id="tapah2-progress-subtab" class="tapah2-subtab-content" style="display:none;">
+                    <div class="card">
+                        <div id="tapah2-score-ring-container" style="padding:16px;background:#f8f9fa;border-radius:10px;margin-bottom:20px;"></div>
+                        <h4 style="margin:0 0 10px;color:var(--primary);">📈 Tapah-2 Progress (Last 28 Days)</h4>
+                        <canvas id="tapah2-score-chart"></canvas>
+                        <div style="text-align:center;color:#888;font-size:12px;margin-top:6px;">Daily max: 41 marks</div>
+                    </div>
+                </div>
+            </div><!-- /tapah2-main-tab -->
 
             <!-- Hidden elements for backward compat -->
             <div id="reports-tab" class="tab-content hidden" style="display:none!important;"></div>
@@ -480,7 +622,11 @@
             </button>
             <button onclick="switchMainTab('tapah')" class="bottom-nav-btn" data-tab="tapah"
                 style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;background:none;border:none;padding:6px 4px;cursor:pointer;margin:0;color:#999;font-size:10px;font-weight:600;">
-                <span style="font-size:22px;">🔥</span> Tapah
+                <span style="font-size:20px;">🔥</span> Tapah
+            </button>
+            <button onclick="switchMainTab('tapah2')" class="bottom-nav-btn" data-tab="tapah2"
+                style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;background:none;border:none;padding:6px 4px;cursor:pointer;margin:0;color:#999;font-size:10px;font-weight:600;">
+                <span style="font-size:20px;">📿</span> Tapah-2
             </button>
             <button onclick="openProfileEdit()" class="bottom-nav-btn" data-tab="settings"
                 style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;background:none;border:none;padding:6px 4px;cursor:pointer;margin:0;color:#999;font-size:10px;font-weight:600;">
@@ -489,7 +635,7 @@
         </div>
     </nav>
 
-    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="app.js"></script>
     <script>
